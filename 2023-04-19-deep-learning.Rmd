@@ -1,0 +1,512 @@
+## Install and attach packages
+
+```{r}
+if(FALSE){
+  install.packages(c("data.table", "R.utils", "ggplot2", "torch"))
+}
+library(data.table)
+library(ggplot2)
+```
+
+In R one of the biggest strengths is the variety of packages that are
+available for different kinds of data analysis. In this tutorial we
+use packages:
+
+* `data.table` for reading data from disk, and converting into a
+  format useful for visualization.
+* `ggplot2` for visualizing the data and results.
+* `torch` for machine learning using linear models and neural
+  networks.
+
+In R there are two methods for accessing objects which are exported
+from packages:
+
+* double-colon syntax, `pkg::fun` means to get `fun` which is exported
+  from `pkg`, for example `data.table::fread` is a function for
+  reading text data files into R. This is useful for
+  teaching/understanding because it is explicit (easy to see which
+  package each object comes from), so it should be preferred for most
+  use cases.
+* We can also use `library(package)` to attach all of the exported
+  functions in package. For example after doing `library(data.table)`
+  you can just write `fread` (without `data.table::`). This is useful
+  for convenience (no need to use the double colon syntax), but it
+  hides which package each object comes from, so it should be used
+  sparingly.
+
+## Download, read, visualize zip code data
+
+Download zip code image data set.
+
+```{r}
+url.vec <- c(
+  zip.gz="https://web.stanford.edu/~hastie/ElemStatLearn/datasets/zip.train.gz")
+for(f in names(url.vec)){
+  u <- url.vec[[f]]
+  if(!file.exists(f)){
+    download.file(u, f)
+  }
+}
+```
+
+Read data from gzipped plain text (one row per image, columns
+separated by spaces) into R as data table.
+
+```{r}
+zip.dt <- fread("zip.gz")
+```
+
+Convert data table to two multi-dimensional arrays (one for inputs,
+one for outputs).
+
+```{r}
+zip.feature.dt <- zip.dt[,-1]
+n.features <- ncol(zip.feature.dt)
+(zip.size <- sqrt(n.features))
+zip.X.array <- array(
+  unlist(zip.feature.dt),
+  c(nrow(zip.dt), 1, zip.size, zip.size))
+str(zip.X.array)
+zip.y.array <- array(zip.dt$V1, nrow(zip.dt))
+str(zip.y.array)
+table(zip.y.array)
+```
+
+Visualize one image.
+
+```{r}
+image(zip.X.array[1,,,])
+```
+
+Convert several digits to long/tall form for display.
+
+```{r}
+(zip.some <- data.table(observation=1:12)[, {
+  data.table(
+    label=zip.y.array[observation],
+    col=rep(1:zip.size, zip.size),
+    row=rep(1:zip.size, each=zip.size),
+    intensity=as.numeric(zip.X.array[observation,,,]))
+}, by=observation])
+```
+
+Display images using a panel/facet for each observation.
+
+```{r}
+breaks <- c(1, zip.size)
+ggplot()+
+  geom_tile(aes(
+    x=col, y=row, fill=intensity),
+    data=zip.some)+
+  facet_wrap(observation + label ~ ., labeller=label_both)+
+  scale_x_continuous(breaks=breaks)+
+  scale_y_reverse(breaks=breaks)+
+  coord_equal()+
+  theme_bw()+
+  theme(panel.spacing=grid::unit(0, "lines"))+
+  scale_fill_gradient(low="black", high="white")
+```
+
+## Convert R data to torch
+
+Torch is a machine learning library which is popular for deep
+learning, because it provides automatic differentiation (also known as
+auto-grad or automatic gradients), which makes it easy to learn
+parameters in deep neural networks. The popular python module `torch`
+uses a C++ library `libtorch` under the hood, which R package `torch`
+also uses, so it has most of the same functionality/concepts, and
+similar naming conventions. 
+
+The main data structure in torch is a tensor, which is analogous to
+the R multi-dimensional array. Below we convert R arrays to torch
+tensors.
+
+```{r}
+(zip.y.tensor <- torch::torch_tensor(zip.y.array+1L, torch::torch_long()))
+str(zip.y.tensor)
+typeof(zip.y.array)
+(zip.X.tensor <- torch::torch_tensor(zip.X.array))
+str(zip.X.tensor)
+typeof(zip.X.array)
+```
+
+An important difference between R and torch is that R is very
+permissive about types (double/numeric can be used for almost
+anything), whereas torch is very strict (single precision float
+typically used for inputs, long int used for output).
+
+## Linear model in torch
+
+Before explaining deep learning (neural networks), we first explain
+linear models. To implement a linear model in torch, we first need to
+flatten each 2d image back to a 1d vector of pixel intensity values,
+
+```{r}
+flatten <- torch::nn_flatten()
+(zip.X.flat <- flatten(zip.X.tensor))
+str(zip.X.flat)
+```
+
+A linear model for classification is defined by two kinds of learned
+parameters. First, a matrix of real-valued weights, with one row for
+each output class, and one column for each input feature. Second, an
+intercept/bias, which is a vector of real numbers, one for each output
+class.
+
+```{r}
+(n.classes <- length(unique(zip.y.array)))
+linear <- torch::nn_linear(n.features, n.classes)
+str(linear$parameters)
+```
+
+Calling the linear object with the flattened data as input, yields a
+matrix of predicted scores as output (one row per image, one column
+per class, larger scores mean more likely to predict that class).
+
+```{r}
+(zip.linear.pred <- linear(zip.X.flat))
+str(zip.linear.pred)
+```
+
+Rather than using flatten and linear operations in separate lines of
+code, below we combine them into a sequential object,
+
+```{r}
+(sequential <- torch::nn_sequential(flatten, linear))
+zip.sequential.pred <- sequential(zip.X.tensor)
+str(zip.sequential.pred)
+```
+
+What are the current predicted classes? We have not yet done any
+learning, and the initialization is random for the weight/bias
+parameters, so the initial predictions are very bad, as we see below.
+
+```{r}
+pred.class.vec <- apply(zip.sequential.pred, 1, which.max)
+is.correct <- torch::torch_tensor(
+  pred.class.vec == zip.y.tensor, torch::torch_float())
+mean(is.correct)
+```
+
+linear.seq <- torch::nn_sequential(
+  torch::nn_flatten(),
+  linear.obj)
+pred.tensor <- linear.seq(zip.X.tensor)
+loss.fun <- torch::nn_cross_entropy_loss()
+loss.tensor <- loss.fun(pred.tensor, zip.y.tensor)
+loss.tensor$backward()
+
+get_loss <- function(L, model, index.vec=seq_along(L$y)){
+  X <- L$X[index.vec,,,,drop=FALSE]
+  y <- L$y[index.vec]
+  pred <- model(X)
+  loss.fun(pred, y)
+}
+
+get_loss(list(X=zip.X.tensor, y=zip.y.tensor), linear.seq)
+
+
+
+step.size <- 0.1
+linear.obj$bias
+linear.obj$bias$grad
+## sub_ is in-place subtraction
+linear.obj$bias-step.size*linear.obj$bias$grad
+torch::with_no_grad({
+  linear.obj$bias$sub_(step.size*linear.obj$bias$grad)
+})
+linear.obj$weight$grad
+
+optimizer <- torch::optim_sgd(linear.seq$parameters, lr=step.size)
+linear.obj$bias
+optimizer$step()
+
+get_batch_list <- function(n_data, batch_size=200){
+  n_batches <- ceiling(n_data / batch_size)
+  batch.vec <- sample(rep(1:n_batches,each=batch_size)[1:n_data])
+  split(seq_along(batch.vec), batch.vec)
+}
+
+## torch batching.
+zip_dataset <- torch::dataset(
+  name = "subtrain_dataset",
+  initialize = function(X.tensor, y.tensor) {
+    self$X <- X.tensor
+    self$y <- y.tensor
+  },
+  .getbatch = function(index.vec) {
+    list(X=self$X[index.vec,,,,drop=FALSE], y=self$y[index.vec])
+  },    
+  .length = function() {
+    self$y$size()
+  }
+)
+zip_dataset <- zip_dataset(zip.X.tensor, zip.y.tensor)
+zip.batch.list <- zip_dataset$.getbatch(1:2)
+zip_loader <- torch::dataloader(zip_dataset, batch_size=batch_size, shuffle=TRUE)
+
+## my batching.
+take_steps <- function(subtrain.list, model, batch_size=200, step.size=0.1){
+  optimizer <- torch::optim_sgd(model$parameters, lr=step.size)
+  batch.list <- get_batch_list(length(subtrain.list$y), batch_size)
+  for(batch.number in seq_along(batch.list)){
+    batch.indices <- batch.list[[batch.number]]
+    batch.loss <- get_loss(subtrain.list, model, batch.indices)
+    optimizer$zero_grad()
+    batch.loss$backward()
+    optimizer$step()
+  }
+}
+
+n.folds <- 3
+num_epochs <- 50
+uniq.folds <- 1:n.folds
+set.seed(1)
+fold.vec <- sample(rep(uniq.folds, l=nrow(zip.dt)))
+loss.dt.list <- list()
+test.fold <- 1
+is.train <- fold.vec!=test.fold
+train.i <- which(is.train)
+is.subtrain <- rep(c(TRUE,TRUE,FALSE),l=length(train.i))
+is.set.list <- list(
+  test=!is.train,
+  subtrain=train.i[is.subtrain],
+  validation=train.i[!is.subtrain])
+tensor.list <- list()
+for(set.name in names(is.set.list)){
+  is.set <- is.set.list[[set.name]]
+  tensor.list[[set.name]] <- list(
+    X=zip.X.tensor[is.set,,,,drop=FALSE],
+    y=zip.y.tensor[is.set])
+}
+linear.model <- torch::nn_sequential(
+  torch::nn_flatten(),
+  torch::nn_linear(ncol(zip.feature.dt), n.classes))
+n.subtrain <- length(tensor.list$subtrain$y)
+for(epoch in 1:num_epochs){
+  take_steps(tensor.list$subtrain, linear.model)
+  torch::with_no_grad({
+    for(set in c("subtrain", "validation")){
+      set.data <- tensor.list[[set]]
+      set.loss <- get_loss(set.data, linear.model)
+      loss.dt.list[[paste(test.fold, epoch, set)]] <- print(data.table(
+        test.fold, epoch, set, loss=as.numeric(set.loss)))
+    }
+  })
+}
+(loss.dt <- rbindlist(loss.dt.list))
+
+min.dt <- loss.dt[, .SD[which.min(loss)], by=set]
+gg <- ggplot()+
+  ggtitle("Linear model")+
+  theme_bw()+
+  theme(panel.spacing=grid::unit(0, "lines"))+
+  geom_line(aes(
+    epoch, loss, color=set),
+    data=loss.dt)+
+  geom_point(aes(
+    epoch, loss, color=set, shape=point),
+    data=data.table(point="min", min.dt))+
+  scale_y_log10("loss value (lower for better predictions)")+
+  scale_x_continuous(
+    "epoch (gradient descent passes through subtrain data)",
+    limits=c(0, num_epochs*1.2),
+    breaks=seq(0, num_epochs, by=10))
+dl <- directlabels::direct.label(gg, "right.polygons")
+png(
+  "figure-validation-loss-torch-linear.png", 
+  width=6, height=4, units="in", res=200)
+print(dl)
+dev.off()
+
+linear.metrics <- linear.model %>% fit(
+  zip.X.array, zip.y.mat,
+  batch_size = 100,
+  epochs = num_epochs,
+  validation_split = 0.2
+)
+linear.wide <- do.call(data.table, linear.metrics$metrics)
+linear.wide[, epoch := 1:.N]
+(linear.tall <- nc::capture_melt_single(
+  linear.wide,
+  set="val_|", function(x)ifelse(x=="val_", "validation", "subtrain"),
+  metric="loss|acc"))
+linear.min.loss <- linear.tall[metric=="loss", .SD[which.min(value)], by=set]
+linear.min.loss[, loss := "min"]
+
+linear.gg <- ggplot()+
+  ggtitle("Linear model")+
+  theme_bw()+
+  theme(panel.spacing=grid::unit(0, "lines"))+
+  geom_line(aes(
+    epoch, value, color=set),
+    data=linear.tall[metric=="loss"])+
+  geom_point(aes(
+    epoch, value, color=set, shape=loss),
+    data=linear.min.loss)+
+  scale_y_log10("loss value (lower for better predictions)")+
+  scale_x_continuous(
+    "epoch (gradient descent passes through subtrain data)",
+    limits=c(0, num_epochs*1.2),
+    breaks=seq(0, num_epochs, by=10))
+linear.dl <- directlabels::direct.label(linear.gg, "right.polygons")
+png("figure-validation-loss-linear.png",
+    width=6, height=4, units="in", res=200)
+print(linear.dl)
+dev.off()
+
+## Deep sparse model.
+conv.model <- keras_model_sequential() %>%
+  layer_conv_2d(
+    input_shape = dim(zip.X.array)[-1],
+    filters = 20,
+    kernel_size = c(3,3),
+    activation = 'relu') %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_flatten() %>%
+  layer_dense(units = 100, activation = 'relu') %>% 
+  layer_dense(units = ncol(zip.y.mat), activation = 'softmax')
+str(conv.model)
+conv.model %>% compile(
+  loss = loss_categorical_crossentropy,#for multi-class classification
+  optimizer = optimizer_adadelta(),
+  metrics = c('accuracy')
+)
+conv.metrics <- conv.model %>% fit(
+  zip.X.array, zip.y.mat,
+  batch_size = 100,
+  epochs = num_epochs,
+  validation_split = 0.2
+)
+conv.wide <- do.call(data.table, conv.metrics$metrics)
+conv.wide[, epoch := 1:.N]
+(conv.tall <- nc::capture_melt_single(
+  conv.wide,
+  set="val_|", function(x)ifelse(x=="val_", "validation", "subtrain"),
+  metric="loss|acc"))
+conv.min.loss <- conv.tall[metric=="loss", .SD[which.min(value)], by=set]
+conv.min.loss[, loss := "min"]
+
+conv.gg <- ggplot()+
+  ggtitle("Convolutional neural network")+
+  theme_bw()+
+  theme(panel.spacing=grid::unit(0, "lines"))+
+  geom_line(aes(
+    epoch, value, color=set),
+    data=conv.tall[metric=="loss"])+
+  geom_point(aes(
+    epoch, value, color=set, shape=loss),
+    data=conv.min.loss)+
+  scale_y_log10("loss value (lower for better predictions)")+
+  scale_x_continuous(
+    "epoch (gradient descent passes through subtrain data)",
+    limits=c(0, num_epochs*1.2),
+    breaks=seq(0, num_epochs, by=10))
+conv.dl <- directlabels::direct.label(conv.gg, "right.polygons")
+png("figure-validation-loss-conv.png",
+    width=6, height=4, units="in", res=200)
+print(conv.dl)
+dev.off()
+
+both.tall <- rbind(
+  data.table(model="convolutional", conv.tall),
+  data.table(model="linear", linear.tall))
+both.gg <- ggplot()+
+  theme_bw()+
+  theme(panel.spacing=grid::unit(0, "lines"))+
+  facet_grid(. ~ model)+
+  geom_line(aes(
+    epoch, value, color=set),
+    data=both.tall[metric=="loss"])+
+  scale_y_log10("loss value (lower for better predictions)")+
+  scale_x_continuous(
+    "epoch (gradient descent passes through subtrain data)",
+    limits=c(0, num_epochs*1.2),
+    breaks=seq(0, num_epochs, by=10))
+directlabels::direct.label(both.gg, "right.polygons")
+
+## QUIZ 1. purpose of train/subtrain/validation/test
+## sets. 2. overfitting/underfitting. 3. data input format for
+## ML. 4. cross-validation fold ID / test/train sets.
+
+## deep dense model.
+dense.model <- keras_model_sequential() %>%
+  layer_flatten(
+    input_shape = dim(zip.X.array)[-1]) %>%
+  layer_dense(units = 100, activation = 'relu') %>% 
+  layer_dense(units = 100, activation = 'relu') %>% 
+  layer_dense(units = 100, activation = 'relu') %>% 
+  layer_dense(units = 100, activation = 'relu') %>%
+  layer_dense(units = 100, activation = 'relu') %>%
+  layer_dense(units = 100, activation = 'relu') %>% 
+  layer_dense(units = 100, activation = 'relu') %>%   
+  layer_dense(units = 100, activation = 'relu') %>% 
+  layer_dense(units = ncol(zip.y.mat), activation = 'softmax')
+dense.model %>% compile(
+  loss = loss_categorical_crossentropy,#for multi-class classification
+  optimizer = optimizer_adadelta(),
+  metrics = c('accuracy')
+)
+dense.metrics <- dense.model %>% fit(
+  zip.X.array, zip.y.mat,
+  batch_size = 100,
+  epochs = num_epochs,
+  validation_split = 0.2
+)
+
+dense.wide <- do.call(data.table, dense.metrics$metrics)
+dense.wide[, epoch := 1:.N]
+(dense.tall <- nc::capture_melt_single(
+  dense.wide,
+  set="val_|", function(x)ifelse(x=="val_", "validation", "subtrain"),
+  metric="loss|acc"))
+dense.min.loss <- dense.tall[metric=="loss", .SD[which.min(value)], by=set]
+dense.min.loss[, loss := "min"]
+dense.gg <- ggplot()+
+  ggtitle("Dense (fully connected) neural network with 8 hidden layers")+
+  theme_bw()+
+  theme(panel.spacing=grid::unit(0, "lines"))+
+  geom_line(aes(
+    epoch, value, color=set),
+    data=dense.tall[metric=="loss"])+
+  geom_point(aes(
+    epoch, value, color=set, shape=loss),
+    data=dense.min.loss)+
+  scale_y_log10("loss value (lower for better predictions)")+
+  scale_x_continuous(
+    "epoch (gradient descent passes through subtrain data)",
+    limits=c(0, num_epochs*1.2),
+    breaks=seq(0, num_epochs, by=10))
+dense.dl <- directlabels::direct.label(dense.gg, "right.polygons")
+png("figure-validation-loss-dense.png",
+    width=6, height=4, units="in", res=200)
+print(dense.dl)
+dev.off()
+
+three.tall <- rbind(
+  both.tall,
+  data.table(model="dense", dense.tall))
+three.gg <- ggplot()+
+  theme_bw()+
+  theme(panel.spacing=grid::unit(0, "lines"))+
+  facet_grid(. ~ model)+
+  geom_line(aes(
+    epoch, value, color=set),
+    data=three.tall[metric=="loss"])+
+  scale_y_log10("loss value (lower for better predictions)")+
+  scale_x_continuous(
+    "epoch (gradient descent passes through subtrain data)",
+    limits=c(0, num_epochs*1.2),
+    breaks=seq(0, num_epochs, by=10))
+three.dl <- directlabels::direct.label(three.gg, "right.polygons")
+png("figure-validation-loss-three.png",
+    width=6, height=4, units="in", res=200)
+print(three.gg)
+dev.off()
+```
+
+## Package versions used
+
+```{r}
+sessionInfo()
+```
