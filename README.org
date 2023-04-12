@@ -1,0 +1,11 @@
+Introduction to Deep Learning in R
+
+By Toby Dylan Hocking.
+
+A 2 hour workshop for the [[https://researchbazaar.arizona.edu/resbaz/Arizona2023/][ResBaz AZ (Research Bazaar Arizona) 2023]].
+
+** 19 April 2023
+
+[[file:2023-04-19-deep-learning.Rmd]] code for tutorial.
+
+[[file:HOCKING-slides-short.tex][LaTeX source]], adapted from [[https://github.com/tdhock/2020-yiqi-summer-school#prepared-for-the-summer-school-4th-year-2021][ML Intro from Land Carbon Modeling Summer School]].
