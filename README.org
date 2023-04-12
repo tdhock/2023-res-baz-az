@@ -9,3 +9,6 @@ A 2 hour workshop for the [[https://researchbazaar.arizona.edu/resbaz/Arizona202
 [[file:2023-04-19-deep-learning.Rmd]] code for tutorial.
 
 [[file:HOCKING-slides-short.tex][LaTeX source]], adapted from [[https://github.com/tdhock/2020-yiqi-summer-school#prepared-for-the-summer-school-4th-year-2021][ML Intro from Land Carbon Modeling Summer School]].
+
+- RStudio
+- Emacs+ESS

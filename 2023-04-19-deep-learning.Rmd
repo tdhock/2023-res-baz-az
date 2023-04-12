@@ -62,12 +62,13 @@ one for outputs).
 ```{r}
 zip.feature.dt <- zip.dt[,-1]
 n.features <- ncol(zip.feature.dt)
-(zip.size <- sqrt(n.features))
+(zip.pixels <- sqrt(n.features))
+n.images <- nrow(zip.dt)
 zip.X.array <- array(
   unlist(zip.feature.dt),
-  c(nrow(zip.dt), 1, zip.size, zip.size))
+  c(n.images, 1, zip.pixels, zip.pixels))
 str(zip.X.array)
-zip.y.array <- array(zip.dt$V1, nrow(zip.dt))
+zip.y.array <- array(zip.dt$V1, n.images)
 str(zip.y.array)
 table(zip.y.array)
 ```
@@ -84,8 +85,8 @@ Convert several digits to long/tall form for display.
 (zip.some <- data.table(observation=1:12)[, {
   data.table(
     label=zip.y.array[observation],
-    col=rep(1:zip.size, zip.size),
-    row=rep(1:zip.size, each=zip.size),
+    col=rep(1:zip.pixels, zip.pixels),
+    row=rep(1:zip.pixels, each=zip.pixels),
     intensity=as.numeric(zip.X.array[observation,,,]))
 }, by=observation])
 ```
@@ -93,7 +94,7 @@ Convert several digits to long/tall form for display.
 Display images using a panel/facet for each observation.
 
 ```{r}
-breaks <- c(1, zip.size)
+breaks <- c(1, zip.pixels)
 ggplot()+
   geom_tile(aes(
     x=col, y=row, fill=intensity),
@@ -155,6 +156,7 @@ class.
 
 ```{r}
 (n.classes <- length(unique(zip.y.array)))
+torch::torch_manual_seed(1)
 linear <- torch::nn_linear(n.features, n.classes)
 str(linear$parameters)
 ```
@@ -183,68 +185,180 @@ parameters, so the initial predictions are very bad, as we see below.
 
 ```{r}
 pred.class.vec <- apply(zip.sequential.pred, 1, which.max)
-is.correct <- torch::torch_tensor(
-  pred.class.vec == zip.y.tensor, torch::torch_float())
-mean(is.correct)
+zip.y.int <- as.integer(zip.y.tensor)
+table(prediction=pred.class.vec, label=zip.y.int)
 ```
 
-linear.seq <- torch::nn_sequential(
-  torch::nn_flatten(),
-  linear.obj)
-pred.tensor <- linear.seq(zip.X.tensor)
+Above is the confusion matrix (predicted classes on rows, true label
+on columns, entries are counts of images), and below is the accuracy
+rate, which is the diagonal of the confusion matrix.
+
+```{r}
+is.correct <- torch::torch_tensor(
+  pred.class.vec == zip.y.tensor, torch::torch_float())
+(percent.correct <- 100*mean(is.correct))
+```
+
+Above is the linear model prediction accuracy at initialization, below
+is the baseline featureless model accuracy (always predict most
+frequent class label),
+
+```{r}
+(zip.y.tab <- table(zip.y.int))
+(most.frequent.count <- zip.y.tab[which.max(zip.y.tab)])
+(most.frequent.label <- as.integer(names(most.frequent.count)))
+100*mean(zip.y.int==most.frequent.label)
+```
+
+## Learning in linear model
+
+To improve predictions, we need to use a gradient descent learning
+algorithm. First we compute a differentiable loss (cross entropy loss
+in this case, multi-class classification), then we compute gradients
+using the backward method, then we update parameters by taking steps
+in the negative gradient direction. Below we define the loss and optimizer,
+
+```{r}
 loss.fun <- torch::nn_cross_entropy_loss()
-loss.tensor <- loss.fun(pred.tensor, zip.y.tensor)
-loss.tensor$backward()
-
-get_loss <- function(L, model, index.vec=seq_along(L$y)){
-  X <- L$X[index.vec,,,,drop=FALSE]
-  y <- L$y[index.vec]
-  pred <- model(X)
-  loss.fun(pred, y)
-}
-
-get_loss(list(X=zip.X.tensor, y=zip.y.tensor), linear.seq)
-
-
-
 step.size <- 0.1
-linear.obj$bias
-linear.obj$bias$grad
-## sub_ is in-place subtraction
-linear.obj$bias-step.size*linear.obj$bias$grad
-torch::with_no_grad({
-  linear.obj$bias$sub_(step.size*linear.obj$bias$grad)
-})
-linear.obj$weight$grad
+optimizer <- torch::optim_sgd(sequential$parameters, lr=step.size)
+```
 
-optimizer <- torch::optim_sgd(linear.seq$parameters, lr=step.size)
-linear.obj$bias
+Below we compute predictions and loss,
+
+```{r}
+zip.sequential.pred <- sequential(zip.X.tensor)
+(loss.tensor <- loss.fun(zip.sequential.pred, zip.y.tensor))
+```
+
+Below we set gradients to zero, then call backward to compute and
+store gradients of the loss with respect to model parameters.
+
+```{r}
+optimizer$zero_grad()
+linear$bias$grad
+loss.tensor$backward()
+linear$bias$grad
+```
+
+Below we use the gradients to update the model parameters.
+
+```{r}
+linear$bias
 optimizer$step()
+linear$bias
+```
 
-get_batch_list <- function(n_data, batch_size=200){
+And that's the basic idea of gradient descent learning! Just keep
+updating the model parameters until you get good predictions!
+
+## Cross-validation
+
+Keep in mind our goal is generalization, meaning we want to get good
+predictions on new data/images that the algorithm was not trained
+on. We therefore need to use cross-validation for two purposes:
+
+* testing: hold out some samples as a test set, to evaluate
+  predictions after all parameters have been learned on the
+  other/train data.
+* training: split the train set into subtrain and validation
+  sets. Subtrain set is used to compute gradients and update model
+  parameters (weights/bias), and validation set is used to learn model
+  complexity hyper-parameters (step size, number of epochs, etc).
+  
+First we need to split the whole data set into train and test, using
+cross-validation.
+
+```{r}
+cv_list <- function(index.vec, keep, hold.out, n.folds=3){
+  uniq.folds <- 1:n.folds
+  fold.vec <- sample(rep(uniq.folds, l=length(index.vec)))
+  out.list <- list()
+  for(fold in uniq.folds){
+    is.held.out <- fold.vec==fold
+    fold.list <- list()
+    fold.list[[hold.out]] <- index.vec[is.held.out]
+    fold.list[[keep]] <- index.vec[!is.held.out]
+    out.list[[paste(hold.out,"fold",fold)]] <- fold.list
+  }
+  out.list
+}
+set.seed(1)
+train.test.cv.list <- cv_list(1:n.images, "train", "test")
+str(train.test.cv.list)
+```
+
+Above we used K-fold cross-validation to create several train/test
+splits, represented in R as a list of lists of indices. Below we split
+the train set into subtrain and validation sets.
+
+```{r}
+test.fold <- 1
+train.test.index.list <- train.test.cv.list[[test.fold]]
+subtrain.validation.cv.list <- cv_list(
+  train.test.index.list$train, "subtrain", "validation")
+str(subtrain.validation.cv.list)
+```
+
+Below we fix one subtrain/validation split,
+
+```{r}
+validation.fold <- 1
+subtrain.validation.index.list <- subtrain.validation.cv.list[[validation.fold]]
+```
+
+We compute the average loss and gradient over the entire subtrain set below,
+
+```{r}
+get_loss <- function(X.tensor, y.tensor, model, index.vec){
+  X.subset <- X.tensor[index.vec,,,,drop=FALSE]
+  y.subset <- y.tensor[index.vec]
+  pred.subset <- model(X.subset)
+  loss.fun(pred.subset, y.subset)
+}
+optimizer$zero_grad()
+(subtrain.loss <- get_loss(
+  zip.X.tensor,
+  zip.y.tensor,
+  sequential,
+  subtrain.validation.index.list$subtrain))
+optimizer$step()
+```
+
+Above is the mean loss over the subtrain set, which can be used for
+gradients (deterministic optimization). For learning it is more common
+to compute gradients with respect to a random sample of
+observations/images (stochastic optimization), as below,
+
+```{r}
+get_batch_list <- function(index.vec, batch_size=200){
+  n_data <- length(index.vec)
   n_batches <- ceiling(n_data / batch_size)
   batch.vec <- sample(rep(1:n_batches,each=batch_size)[1:n_data])
-  split(seq_along(batch.vec), batch.vec)
+  split(index.vec, batch.vec)
 }
+big.batches <- get_batch_list(subtrain.validation.index.list$subtrain, 1000)
+str(big.batches)
+```
 
-## torch batching.
-zip_dataset <- torch::dataset(
-  name = "subtrain_dataset",
-  initialize = function(X.tensor, y.tensor) {
-    self$X <- X.tensor
-    self$y <- y.tensor
-  },
-  .getbatch = function(index.vec) {
-    list(X=self$X[index.vec,,,,drop=FALSE], y=self$y[index.vec])
-  },    
-  .length = function() {
-    self$y$size()
-  }
-)
-zip_dataset <- zip_dataset(zip.X.tensor, zip.y.tensor)
-zip.batch.list <- zip_dataset$.getbatch(1:2)
-zip_loader <- torch::dataloader(zip_dataset, batch_size=batch_size, shuffle=TRUE)
+After creating the batches above, we use a for loop below to compute
+the loss and gradient for each batch.
 
+```{r}
+for(batch.number in seq_along(big.batches)){
+  batch.indices <- big.batches[[batch.number]]
+  batch.loss <- get_loss(
+    zip.X.tensor,
+    zip.y.tensor,
+    sequential,
+    batch.indices)
+  optimizer$zero_grad()
+  batch.loss$backward()
+  optimizer$step()
+}
+```
+
+```{r}
 ## my batching.
 take_steps <- function(subtrain.list, model, batch_size=200, step.size=0.1){
   optimizer <- torch::optim_sgd(model$parameters, lr=step.size)
@@ -258,20 +372,8 @@ take_steps <- function(subtrain.list, model, batch_size=200, step.size=0.1){
   }
 }
 
-n.folds <- 3
 num_epochs <- 50
-uniq.folds <- 1:n.folds
-set.seed(1)
-fold.vec <- sample(rep(uniq.folds, l=nrow(zip.dt)))
 loss.dt.list <- list()
-test.fold <- 1
-is.train <- fold.vec!=test.fold
-train.i <- which(is.train)
-is.subtrain <- rep(c(TRUE,TRUE,FALSE),l=length(train.i))
-is.set.list <- list(
-  test=!is.train,
-  subtrain=train.i[is.subtrain],
-  validation=train.i[!is.subtrain])
 tensor.list <- list()
 for(set.name in names(is.set.list)){
   is.set <- is.set.list[[set.name]]
