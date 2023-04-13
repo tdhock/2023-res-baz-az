@@ -211,24 +211,23 @@ table(prediction=pred.class.vec, label=zip.y.int)
 ```
 
 Above is the confusion matrix (predicted classes on rows, true label
-on columns, entries are counts of images), and below is the accuracy
+on columns, entries are counts of images), and below is the error
 rate, which is the diagonal of the confusion matrix.
 
 ```{r}
-is.correct <- torch::torch_tensor(
-  pred.class.vec == zip.y.tensor, torch::torch_float())
-(percent.correct <- 100*mean(is.correct))
+is.error <- pred.class.vec != zip.y.int
+(percent.error <- 100*mean(is.error))
 ```
 
-Above is the linear model prediction accuracy at initialization, below
-is the baseline featureless model accuracy (always predict most
+Above is the linear model prediction error at initialization, below
+is the baseline featureless model error (always predict most
 frequent class label),
 
 ```{r}
 (zip.y.tab <- table(zip.y.int))
 (most.frequent.count <- zip.y.tab[which.max(zip.y.tab)])
 (most.frequent.label <- as.integer(names(most.frequent.count)))
-100*mean(zip.y.int==most.frequent.label)
+100*mean(zip.y.int!=most.frequent.label)
 ```
 
 ## Learning in linear model
@@ -285,7 +284,7 @@ on. We therefore need to use cross-validation for two purposes:
 * training: split the train set into subtrain and validation
   sets. Subtrain set is used to compute gradients and update model
   parameters (weights/bias), and validation set is used to learn model
-  complexity hyper-parameters (step size, number of epochs, etc).
+  complexity hyper-parameters (step size, number of steps/epochs, etc).
   
 First we need to split the whole data set into train and test, using
 cross-validation.
@@ -316,41 +315,73 @@ the train set into subtrain and validation sets.
 ```{r}
 test.fold <- 1
 train.test.index.list <- train.test.cv.list[[test.fold]]
-subtrain.validation.cv.list <- cv_list(
+sub.val.cv.list <- cv_list(
   train.test.index.list$train, "subtrain", "validation")
-str(subtrain.validation.cv.list)
+str(sub.val.cv.list)
 ```
 
 Below we fix one subtrain/validation split,
 
 ```{r}
 validation.fold <- 1
-subtrain.validation.index.list <- subtrain.validation.cv.list[[validation.fold]]
+sub.val.index.list <- sub.val.cv.list[[validation.fold]]
 ```
 
 We compute the average loss and gradient over the entire subtrain set below,
 
 ```{r}
-get_loss <- function(X.tensor, y.tensor, model, index.vec){
-  X.subset <- X.tensor[index.vec,,,,drop=FALSE]
-  y.subset <- y.tensor[index.vec]
+get_pred_loss <- function(model, index.vec){
+  X.subset <- zip.X.tensor[index.vec,,,,drop=FALSE]
+  y.subset <- zip.y.tensor[index.vec]
   pred.subset <- model(X.subset)
-  loss.fun(pred.subset, y.subset)
+  list(pred=pred.subset, loss=loss.fun(pred.subset, y.subset))
 }
 optimizer$zero_grad()
-(subtrain.loss <- get_loss(
-  zip.X.tensor,
-  zip.y.tensor,
-  sequential,
-  subtrain.validation.index.list$subtrain))
+(subtrain.loss <- get_pred_loss(sequential, sub.val.index.list$subtrain)$loss)
 subtrain.loss$backward()
 optimizer$step()
 ```
 
 Above is the mean loss over the subtrain set, which can be used for
-gradients (deterministic optimization). For learning it is more common
-to compute gradients with respect to a random sample of
-observations/images (stochastic optimization), as below,
+gradients (deterministic optimization), or for monitoring convergence
+(subtrain loss should decrease with each step/epoch, if step size is
+chosen appropriately). For monitoring convergence and avoiding
+overfitting, we would like to compute the loss and error rate, as in
+the function below.
+
+```{r}
+loss_one_set <- function(set.indices, model){
+  torch::with_no_grad({#for efficiency, gradients not necessary.
+    set.label.vec <- zip.y.tensor[set.indices]
+    set.pred.loss <- get_pred_loss(model, set.indices)
+    set.pred.class <- apply(set.pred.loss$pred, 1, which.max)
+    is.error <- set.label.vec != set.pred.class
+    rbind(
+      data.table(variable="loss",value=as.numeric(set.pred.loss$loss)),
+      data.table(variable="error.percent",value=100*mean(as.numeric(is.error))))
+  })
+}
+loss_one_set(sub.val.index.list$subtrain, sequential)
+```
+
+To compute loss for each set, we use the function below,
+
+```{r}
+loss_each_set <- function(list.of.indices, model){
+  data.table(set=names(list.of.indices))[, {
+    loss_one_set(list.of.indices[[set]], model)
+  }, by=set]
+}
+loss_each_set(sub.val.index.list, sequential)
+```
+
+## Batching
+
+In previous sections we have computed loss and gradients over all the
+observations/images in the subtrain set (deterministic
+optimization). For learning it is more common to compute gradients
+with respect to a random sample of observations/images (stochastic
+optimization), as below,
 
 ```{r}
 get_batch_list <- function(index.vec, batch_size=200){
@@ -359,7 +390,7 @@ get_batch_list <- function(index.vec, batch_size=200){
   batch.vec <- sample(rep(1:n_batches,each=batch_size)[1:n_data])
   split(index.vec, batch.vec)
 }
-big.batches <- get_batch_list(subtrain.validation.index.list$subtrain, 1000)
+big.batches <- get_batch_list(sub.val.index.list$subtrain, 1000)
 str(big.batches)
 ```
 
@@ -369,11 +400,7 @@ the loss and gradient for each batch.
 ```{r}
 for(batch.number in seq_along(big.batches)){
   batch.indices <- big.batches[[batch.number]]
-  batch.loss <- get_loss(
-    zip.X.tensor,
-    zip.y.tensor,
-    sequential,
-    batch.indices)
+  batch.loss <- get_pred_loss(sequential, batch.indices)$loss
   print(batch.loss)
   optimizer$zero_grad()
   batch.loss$backward()
@@ -382,254 +409,240 @@ for(batch.number in seq_along(big.batches)){
 ```
 
 We use the function below to implement the same logic as above (take a
-step for each subtrain batch).
+step for each subtrain batch). It modifies the parameters of the input
+`model` in-place.
 
 ```{r}
-take_steps <- function(subtrain.list, model){
+take_steps <- function(subtrain.indices, model){
   optimizer <- torch::optim_sgd(model$parameters, lr=step.size)
-  batch.list <- get_batch_list(length(subtrain.list$y), batch_size)
+  batch.list <- get_batch_list(subtrain.indices)
   for(batch.number in seq_along(batch.list)){
     batch.indices <- batch.list[[batch.number]]
-    batch.loss <- get_loss(subtrain.list, model, batch.indices)
+    batch.loss <- get_pred_loss(model, batch.indices)$loss
     optimizer$zero_grad()
     batch.loss$backward()
     optimizer$step()
   }
 }
+```
 
-num_epochs <- 50
-loss.dt.list <- list()
-tensor.list <- list()
-for(set.name in names(is.set.list)){
-  is.set <- is.set.list[[set.name]]
-  tensor.list[[set.name]] <- list(
-    X=zip.X.tensor[is.set,,,,drop=FALSE],
-    y=zip.y.tensor[is.set])
-}
+## Gradient descent learning loop over epochs
+
+Below we can do a gradient descent learning for loop over epochs,
+while monitoring the validation loss, to learn how many epochs results
+in the best predictions (smallest loss/error).
+
+```{r}
+max_epochs <- 100
+torch::torch_manual_seed(1)#control weight/bias initialization.
+set.seed(1)#control random batching.
 linear.model <- torch::nn_sequential(
   torch::nn_flatten(),
-  torch::nn_linear(ncol(zip.feature.dt), n.classes))
-n.subtrain <- length(tensor.list$subtrain$y)
-for(epoch in 1:num_epochs){
-  take_steps(tensor.list$subtrain, linear.model)
-  torch::with_no_grad({
-    for(set in c("subtrain", "validation")){
-      set.data <- tensor.list[[set]]
-      set.loss <- get_loss(set.data, linear.model)
-      loss.dt.list[[paste(test.fold, epoch, set)]] <- print(data.table(
-        test.fold, epoch, set, loss=as.numeric(set.loss)))
-    }
-  })
+  torch::nn_linear(n.features, n.classes))
+loss.dt.list <- list()
+for(epoch in seq(0, max_epochs)){
+  epoch.loss.dt <- loss_each_set(sub.val.index.list, linear.model)
+  loss.dt.list[[paste(epoch)]] <- data.table(epoch, epoch.loss.dt)
+  take_steps(sub.val.index.list$subtrain, linear.model)
 }
 (loss.dt <- rbindlist(loss.dt.list))
+```
 
-min.dt <- loss.dt[, .SD[which.min(loss)], by=set]
+The code above first initializes a new linear model, then for each
+epoch, it computes the loss on each set, and takes steps using
+gradients computed on batches from the subtrain set. The loss/error
+values at each epoch are combined into the data table displayed above,
+and plotted below.
+
+```{r}
+plot_loss <- function(loss.dt){
+  (min.dt <- loss.dt[, .SD[which.min(value)], by=.(set, variable)])
+  gg <- ggplot()+
+    ggtitle(paste("Linear model, validation fold", validation.fold))+
+    facet_grid(variable ~ ., scales="free")+
+    theme_bw()+
+    theme(panel.spacing=grid::unit(0, "lines"))+
+    geom_line(aes(
+      epoch, value, color=set),
+      data=loss.dt)+
+    geom_point(aes(
+      epoch, value, shape=point),
+      data=data.table(point="min", min.dt))+
+    scale_y_continuous("loss/error value (lower for better predictions)")+
+    scale_x_continuous(
+      "epoch (gradient descent passes through subtrain data)",
+      limits=c(0, max_epochs*1.2),
+      breaks=seq(0, max_epochs, by=10))
+  directlabels::direct.label(gg, "right.polygons")
+}
+plot_loss(loss.dt)
+```
+
+Since the loss/error values are so large when the number of epochs of
+learning is so small, it makes the max on the y axis too large to see
+details for larger epoch numbers, so we exclude the first ten epochs
+of data in the plot below.
+
+```{r}
+plot_loss(loss.dt[epoch>=10])
+```
+
+It is clear from the plot above that 
+
+* the subtrain loss/error consistently decrease as the number of
+  learning epochs increases, which means that the step size has been
+  chosen appropriately (see interactive figure about gradient descent
+  for regression for examples of what it looks like when step size is
+  too small/large),
+* the validation loss/error has the characteristic U shape of a
+  regularization paramaeter, meaning that we should use early stopping
+  regularization, at about 50-60 epochs.
+  
+## Averaging over several subtrain/validation splits
+
+Instead of trusting a single random subtrain/validation split to
+determine the best number of epochs (sensitive to random split), we
+typically use K-fold cross-validation, and average the loss/error
+curves over several validation sets (less sensitive, more stable).
+
+```{r}
+gradient_descent <- function(index.list, model, n_epochs, gradient.set){
+  loss.dt.list <- list()
+  for(epoch in seq(1, n_epochs)){
+    take_steps(index.list[[gradient.set]], model)
+    epoch.loss.dt <- loss_each_set(index.list, model)
+    loss.dt.list[[paste(epoch)]] <- data.table(epoch, epoch.loss.dt)
+  }
+  rbindlist(loss.dt.list)
+}
+new_linear_model <- function(){
+  torch::nn_sequential(
+    torch::nn_flatten(),
+    torch::nn_linear(n.features, n.classes))
+}
+torch::torch_manual_seed(1)#control weight/bias initialization.
+set.seed(1)#control random batching.
+fold.loss.dt.list <- list()
+for(validation.fold in seq_along(sub.val.cv.list)){
+  fold.model <- new_linear_model()
+  one.index.list <- sub.val.cv.list[[validation.fold]]
+  fold.result <- gradient_descent(
+    one.index.list, fold.model, max_epochs, "subtrain")
+  fold.loss.dt.list[[validation.fold]] <- data.table(
+    validation.fold, fold.result)
+}
+(fold.loss.dt <- rbindlist(fold.loss.dt.list))
+```
+
+The result above is a table of loss/error for each epoch and
+validation fold. It can be visualized as three separate curves, as
+below.
+
+```{r}
 gg <- ggplot()+
   ggtitle("Linear model")+
+  facet_grid(variable ~ validation.fold, scales="free", labeller=label_both)+
   theme_bw()+
   theme(panel.spacing=grid::unit(0, "lines"))+
   geom_line(aes(
-    epoch, loss, color=set),
-    data=loss.dt)+
+    epoch, value, color=set),
+    data=fold.loss.dt[epoch>=10])+
+  scale_y_continuous("loss/error value (lower for better predictions)")+
+  scale_x_continuous(
+    "epoch (gradient descent passes through subtrain data)",
+    limits=c(0, max_epochs*1.5),
+    breaks=seq(0, max_epochs, by=10))
+directlabels::direct.label(gg, "right.polygons")
+```
+
+Typically to select the best number of epochs, we first compute the
+mean validation loss curves (over the three folds), as below.
+
+```{r}
+(mean.curves.dt <- fold.loss.dt[, .(
+  mean=mean(value)
+), by=.(variable, set, epoch)])
+```
+
+Then we take the min of the validation loss curve, as below.
+
+```{r}
+(selected.dt <- mean.curves.dt[set=="validation"&variable=="loss"][which.min(mean)])
+gg <- ggplot()+
+  ggtitle("Linear model, mean curves over subtrain/validation splits")+
+  facet_grid(variable ~ ., scales="free")+
+  theme_bw()+
+  theme(panel.spacing=grid::unit(0, "lines"))+
+  geom_line(aes(
+    epoch, mean, color=set),
+    data=mean.curves.dt[epoch>=10])+
   geom_point(aes(
-    epoch, loss, color=set, shape=point),
-    data=data.table(point="min", min.dt))+
-  scale_y_log10("loss value (lower for better predictions)")+
+    epoch, mean),
+    data=selected.dt)+
+  scale_y_continuous("loss/error value (lower for better predictions)")+
   scale_x_continuous(
     "epoch (gradient descent passes through subtrain data)",
-    limits=c(0, num_epochs*1.2),
-    breaks=seq(0, num_epochs, by=10))
-dl <- directlabels::direct.label(gg, "right.polygons")
-png(
-  "figure-validation-loss-torch-linear.png", 
-  width=6, height=4, units="in", res=200)
-print(dl)
-dev.off()
+    limits=c(0, max_epochs*1.5),
+    breaks=seq(0, max_epochs, by=10))
+directlabels::direct.label(gg, "right.polygons")
+```
 
-linear.metrics <- linear.model %>% fit(
-  zip.X.array, zip.y.mat,
-  batch_size = 100,
-  epochs = num_epochs,
-  validation_split = 0.2
-)
-linear.wide <- do.call(data.table, linear.metrics$metrics)
-linear.wide[, epoch := 1:.N]
-(linear.tall <- nc::capture_melt_single(
-  linear.wide,
-  set="val_|", function(x)ifelse(x=="val_", "validation", "subtrain"),
-  metric="loss|acc"))
-linear.min.loss <- linear.tall[metric=="loss", .SD[which.min(value)], by=set]
-linear.min.loss[, loss := "min"]
+Finally, after having learned the best number of epochs, we
+re-initialize the model, and run gradient descent on the train set
+(not subtrain), using that number of epochs.
 
-linear.gg <- ggplot()+
-  ggtitle("Linear model")+
-  theme_bw()+
-  theme(panel.spacing=grid::unit(0, "lines"))+
-  geom_line(aes(
-    epoch, value, color=set),
-    data=linear.tall[metric=="loss"])+
-  geom_point(aes(
-    epoch, value, color=set, shape=loss),
-    data=linear.min.loss)+
-  scale_y_log10("loss value (lower for better predictions)")+
-  scale_x_continuous(
-    "epoch (gradient descent passes through subtrain data)",
-    limits=c(0, num_epochs*1.2),
-    breaks=seq(0, num_epochs, by=10))
-linear.dl <- directlabels::direct.label(linear.gg, "right.polygons")
-png("figure-validation-loss-linear.png",
-    width=6, height=4, units="in", res=200)
-print(linear.dl)
-dev.off()
+```{r}
+final.model <- new_linear_model()
+final.loss <- gradient_descent(
+  train.test.index.list, final.model, selected.dt$epoch, "train")
+final.loss[epoch==max(epoch)]
+```
 
-## Deep sparse model.
-conv.model <- keras_model_sequential() %>%
-  layer_conv_2d(
-    input_shape = dim(zip.X.array)[-1],
-    filters = 20,
-    kernel_size = c(3,3),
-    activation = 'relu') %>% 
-  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
-  layer_flatten() %>%
-  layer_dense(units = 100, activation = 'relu') %>% 
-  layer_dense(units = ncol(zip.y.mat), activation = 'softmax')
-str(conv.model)
-conv.model %>% compile(
-  loss = loss_categorical_crossentropy,#for multi-class classification
-  optimizer = optimizer_adadelta(),
-  metrics = c('accuracy')
-)
-conv.metrics <- conv.model %>% fit(
-  zip.X.array, zip.y.mat,
-  batch_size = 100,
-  epochs = num_epochs,
-  validation_split = 0.2
-)
-conv.wide <- do.call(data.table, conv.metrics$metrics)
-conv.wide[, epoch := 1:.N]
-(conv.tall <- nc::capture_melt_single(
-  conv.wide,
-  set="val_|", function(x)ifelse(x=="val_", "validation", "subtrain"),
-  metric="loss|acc"))
-conv.min.loss <- conv.tall[metric=="loss", .SD[which.min(value)], by=set]
-conv.min.loss[, loss := "min"]
+## Neural networks
 
-conv.gg <- ggplot()+
-  ggtitle("Convolutional neural network")+
-  theme_bw()+
-  theme(panel.spacing=grid::unit(0, "lines"))+
-  geom_line(aes(
-    epoch, value, color=set),
-    data=conv.tall[metric=="loss"])+
-  geom_point(aes(
-    epoch, value, color=set, shape=loss),
-    data=conv.min.loss)+
-  scale_y_log10("loss value (lower for better predictions)")+
-  scale_x_continuous(
-    "epoch (gradient descent passes through subtrain data)",
-    limits=c(0, num_epochs*1.2),
-    breaks=seq(0, num_epochs, by=10))
-conv.dl <- directlabels::direct.label(conv.gg, "right.polygons")
-png("figure-validation-loss-conv.png",
-    width=6, height=4, units="in", res=200)
-print(conv.dl)
-dev.off()
+Everything we have done above for the linear model generalizes easily
+to neural networks; the only change is in the definition of the model.
 
-both.tall <- rbind(
-  data.table(model="convolutional", conv.tall),
-  data.table(model="linear", linear.tall))
-both.gg <- ggplot()+
-  theme_bw()+
-  theme(panel.spacing=grid::unit(0, "lines"))+
-  facet_grid(. ~ model)+
-  geom_line(aes(
-    epoch, value, color=set),
-    data=both.tall[metric=="loss"])+
-  scale_y_log10("loss value (lower for better predictions)")+
-  scale_x_continuous(
-    "epoch (gradient descent passes through subtrain data)",
-    limits=c(0, num_epochs*1.2),
-    breaks=seq(0, num_epochs, by=10))
-directlabels::direct.label(both.gg, "right.polygons")
+```{r}
+seq2flat <- torch::nn_sequential(
+  torch::nn_conv2d(in_channels = 1, out_channels = 19, kernel_size = 3),
+  torch::nn_relu(),
+  torch::nn_max_pool2d(kernel_size = 2),
+  torch::nn_flatten())
+one.flat <- seq2flat(zip.X.tensor[1,,,,drop=FALSE])
+(n.flat <- length(one.flat))
+n.hidden.units <- 100
+(convolutional.network <- torch::nn_sequential(
+  seq2flat, 
+  torch::nn_linear(n.flat, n.hidden.units),
+  torch::nn_relu(),
+  torch::nn_linear(n.hidden.units, n.classes)))
+count_params <- function(model){
+  sum(sapply(model$parameters, length))
+}
+(conv.params <- count_params(convolutional.network))
 
-## QUIZ 1. purpose of train/subtrain/validation/test
-## sets. 2. overfitting/underfitting. 3. data input format for
-## ML. 4. cross-validation fold ID / test/train sets.
+new_fully_connected <- function(n.hidden.layers){
+  units.per.layer <- c(n.features, rep(n.hidden.units,n.hidden.layers), n.classes)
+  seq.args <- list()
+  for(input.i in seq(1, length(units.per.layer)-1)){
+    output.i <- input.i+1
+    seq.args[[input.i]] <- torch::nn_linear(
+      units.per.layer[[input.i]], 
+      units.per.layer[[output.i]])
+  }
+  do.call(torch::nn_sequential, seq.args)
+}
 
-## deep dense model.
-dense.model <- keras_model_sequential() %>%
-  layer_flatten(
-    input_shape = dim(zip.X.array)[-1]) %>%
-  layer_dense(units = 100, activation = 'relu') %>% 
-  layer_dense(units = 100, activation = 'relu') %>% 
-  layer_dense(units = 100, activation = 'relu') %>% 
-  layer_dense(units = 100, activation = 'relu') %>%
-  layer_dense(units = 100, activation = 'relu') %>%
-  layer_dense(units = 100, activation = 'relu') %>% 
-  layer_dense(units = 100, activation = 'relu') %>%   
-  layer_dense(units = 100, activation = 'relu') %>% 
-  layer_dense(units = ncol(zip.y.mat), activation = 'softmax')
-dense.model %>% compile(
-  loss = loss_categorical_crossentropy,#for multi-class classification
-  optimizer = optimizer_adadelta(),
-  metrics = c('accuracy')
-)
-dense.metrics <- dense.model %>% fit(
-  zip.X.array, zip.y.mat,
-  batch_size = 100,
-  epochs = num_epochs,
-  validation_split = 0.2
-)
+new_fully_connected(0)# linear model.
+new_fully_connected(1)# neural network with one hidden layer (not deep).
+new_fully_connected(2)# "deep" neural network.
+new_fully_connected(3)# "deeper" neural network.
 
-dense.wide <- do.call(data.table, dense.metrics$metrics)
-dense.wide[, epoch := 1:.N]
-(dense.tall <- nc::capture_melt_single(
-  dense.wide,
-  set="val_|", function(x)ifelse(x=="val_", "validation", "subtrain"),
-  metric="loss|acc"))
-dense.min.loss <- dense.tall[metric=="loss", .SD[which.min(value)], by=set]
-dense.min.loss[, loss := "min"]
-dense.gg <- ggplot()+
-  ggtitle("Dense (fully connected) neural network with 8 hidden layers")+
-  theme_bw()+
-  theme(panel.spacing=grid::unit(0, "lines"))+
-  geom_line(aes(
-    epoch, value, color=set),
-    data=dense.tall[metric=="loss"])+
-  geom_point(aes(
-    epoch, value, color=set, shape=loss),
-    data=dense.min.loss)+
-  scale_y_log10("loss value (lower for better predictions)")+
-  scale_x_continuous(
-    "epoch (gradient descent passes through subtrain data)",
-    limits=c(0, num_epochs*1.2),
-    breaks=seq(0, num_epochs, by=10))
-dense.dl <- directlabels::direct.label(dense.gg, "right.polygons")
-png("figure-validation-loss-dense.png",
-    width=6, height=4, units="in", res=200)
-print(dense.dl)
-dev.off()
+## "deep" with about same # of params as conv net.
+(dense.network <- new_fully_connected(8))
+count_params(dense.network)
 
-three.tall <- rbind(
-  both.tall,
-  data.table(model="dense", dense.tall))
-three.gg <- ggplot()+
-  theme_bw()+
-  theme(panel.spacing=grid::unit(0, "lines"))+
-  facet_grid(. ~ model)+
-  geom_line(aes(
-    epoch, value, color=set),
-    data=three.tall[metric=="loss"])+
-  scale_y_log10("loss value (lower for better predictions)")+
-  scale_x_continuous(
-    "epoch (gradient descent passes through subtrain data)",
-    limits=c(0, num_epochs*1.2),
-    breaks=seq(0, num_epochs, by=10))
-three.dl <- directlabels::direct.label(three.gg, "right.polygons")
-png("figure-validation-loss-three.png",
-    width=6, height=4, units="in", res=200)
-print(three.gg)
-dev.off()
 ```
 
 ## Package versions used
