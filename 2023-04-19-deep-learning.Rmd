@@ -2,7 +2,7 @@
 
 ```{r}
 if(FALSE){
-  install.packages(c("data.table", "R.utils", "ggplot2", "torch"))
+  install.packages(c("data.table", "R.utils", "ggplot2", "torch", "future.apply"))
 }
 library(data.table)
 library(ggplot2)
@@ -354,7 +354,9 @@ loss_one_set <- function(set.indices, model){
   torch::with_no_grad({#for efficiency, gradients not necessary.
     set.label.vec <- zip.y.tensor[set.indices]
     set.pred.loss <- get_pred_loss(model, set.indices)
-    set.pred.class <- apply(set.pred.loss$pred, 1, which.max)
+    set.pred.class <- apply(set.pred.loss$pred, 1, function(prob.vec){
+      if(any(is.na(prob.vec)))NA_integer_ else which.max(prob.vec)
+    })
     is.error <- set.label.vec != set.pred.class
     rbind(
       data.table(variable="loss",value=as.numeric(set.pred.loss$loss)),
@@ -604,30 +606,63 @@ Everything we have done above for the linear model generalizes easily
 to neural networks; the only change is in the definition of the model.
 
 ```{r}
-seq2flat <- torch::nn_sequential(
-  torch::nn_conv2d(in_channels = 1, out_channels = 19, kernel_size = 3),
-  torch::nn_relu(),
-  torch::nn_max_pool2d(kernel_size = 2),
-  torch::nn_flatten())
-one.flat <- seq2flat(zip.X.tensor[1,,,,drop=FALSE])
-(n.flat <- length(one.flat))
 n.hidden.units <- 100
-(convolutional.network <- torch::nn_sequential(
-  seq2flat, 
-  torch::nn_linear(n.flat, n.hidden.units),
-  torch::nn_relu(),
-  torch::nn_linear(n.hidden.units, n.classes)))
-count_params <- function(model){
-  sum(sapply(model$parameters, length))
+new_convolutional <- function(){
+  seq2flat <- torch::nn_sequential(
+    torch::nn_conv2d(in_channels = 1, out_channels = 19, kernel_size = 3),
+    torch::nn_relu(),
+    torch::nn_max_pool2d(kernel_size = 2),
+    torch::nn_flatten())
+  one.flat <- seq2flat(zip.X.tensor[1,,,,drop=FALSE])
+  n.flat <- length(one.flat)
+  torch::nn_sequential(
+    seq2flat, 
+    torch::nn_linear(n.flat, n.hidden.units),
+    torch::nn_relu(),
+    torch::nn_linear(n.hidden.units, n.classes))
 }
-(conv.params <- count_params(convolutional.network))
+(convolutional.network <- new_convolutional())
+```
 
+```{r}
+loss_each_split <- function(new_model, train.indices){
+  cv.list <- cv_list(train.indices, "subtrain", "validation")
+  fold.loss.dt.list <- list()
+  for(validation.fold in seq_along(cv.list)){
+    fold.model <- new_model()
+    one.index.list <- sub.val.cv.list[[validation.fold]]
+    fold.result <- gradient_descent(
+      one.index.list, fold.model, max_epochs, "subtrain")
+    fold.loss.dt.list[[validation.fold]] <- data.table(
+      validation.fold, fold.result)
+  }
+  rbindlist(fold.loss.dt.list)
+}
+train_model <- function(new_model, tt.index.list){
+  fold.loss.dt <- loss_each_split(new_model, tt.index.list$train)
+  mean.curves.dt <- fold.loss.dt[, .(
+    mean=mean(value)
+  ), by=.(variable, set, epoch)]
+  selected.dt <- mean.curves.dt[
+    set=="validation"&variable=="loss"][which.min(mean)]
+  final.model <- new_model()
+  final.loss <- gradient_descent(
+    tt.index.list, final.model, selected.dt$epoch, "train")
+  list(
+    model=final.model,
+    final.loss=final.loss,
+    fold.loss=fold.loss.dt,
+    mean.curves=mean.curves.dt)
+}
 new_fully_connected <- function(n.hidden.layers){
-  units.per.layer <- c(n.features, rep(n.hidden.units,n.hidden.layers), n.classes)
-  seq.args <- list()
-  for(input.i in seq(1, length(units.per.layer)-1)){
-    output.i <- input.i+1
-    seq.args[[input.i]] <- torch::nn_linear(
+  units.per.layer <- c(
+    n.features,
+    rep(n.hidden.units,n.hidden.layers),
+    n.classes)
+  seq.args <- list(torch::nn_flatten())
+  for(output.i in seq(2, length(units.per.layer))){
+    input.i <- output.i-1
+    seq.args[[output.i]] <- torch::nn_linear(
       units.per.layer[[input.i]], 
       units.per.layer[[output.i]])
   }
@@ -642,8 +677,37 @@ new_fully_connected(3)# "deeper" neural network.
 ## "deep" with about same # of params as conv net.
 (dense.network <- new_fully_connected(8))
 count_params(dense.network)
+dense.network(zip.X.tensor[1:2,])
+linear.model(zip.X.tensor[1:2,])
+
+new_model_list <- list(
+  linear=new_linear_model,
+  convolutional=new_convolutional,
+  one_dense_hidden_layer=function()new_fully_connected(1),
+  eight_dense_hidden_layers=function()new_fully_connected(8))
+
+test.loss.list <- list()
+for(test.fold in seq_along(train.test.cv.list)){
+  tt.index.list <- train.test.cv.list[[test.fold]]
+  for(model.name in names(new_model_list)){
+    out.name <- paste(test.fold,model.name)
+    print(out.name)
+    new_model <- new_model_list[[model.name]]
+    result <- train_model(new_model, tt.index.list)
+    test.loss.list[[out.name]] <- data.table(
+      test.fold, model.name,
+      result$final.loss[epoch==max(epoch)&set=="test"])
+  }
+}
+test.loss <- rbindlist(test.loss.list)
 
 ```
+
+These for loops are embarassingly parallel (can be done independently,
+in any order), so great speedups could be obtained if you run in them
+parallel, for example on a computer cluster such as NAU Monsoon, [see
+my tutorial
+here](https://tdhock.github.io/blog/2020/monsoon-batchtools/).
 
 ## Package versions used
 
