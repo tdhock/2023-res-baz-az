@@ -6,9 +6,18 @@ A 2 hour workshop for the [[https://researchbazaar.arizona.edu/resbaz/Arizona202
 
 ** 19 April 2023
 
+Interactive visualizations
+
+[[file:figure-grad-desc-regression.PNG]]
+[[https://rcdata.nau.edu/genomic-ml/animint-gallery/2022-02-02-gradient-descent-regression/index.html][Interactive viz]], [[https://github.com/tdhock/cs570-spring-2022/blob/969c42e6e6a704271c330bbf9424dfd50753e8bc/figure-gradient-descent-regression.R][source]].
+
+[[file:figure-linear-neural-learning.PNG]]
+[[https://rcdata.nau.edu/genomic-ml/animint-gallery/2023-01-30-neural-networks-sim/index.html][Interactive viz]], [[https://github.com/tdhock/animint-book/blob/7e7a224c004843d42a6f7e6caa30e319bcdce901/Ch18-neural-networks-sim.R][source]].
+
 [[file:2023-04-19-deep-learning.Rmd]] code for tutorial.
 
-[[file:HOCKING-slides-short.tex][LaTeX source]], adapted from [[https://github.com/tdhock/2020-yiqi-summer-school#prepared-for-the-summer-school-4th-year-2021][ML Intro from Land Carbon Modeling Summer School]].
+[[file:HOCKING-slides-short.tex][LaTeX source]], adapted from [[https://github.com/tdhock/2020-yiqi-summer-school#prepared-for-the-summer-school-4th-year-2021][ML Intro from Land Carbon Modeling Summer
+School]].
 
 - RStudio
 - Emacs+ESS

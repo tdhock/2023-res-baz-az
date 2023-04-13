@@ -79,7 +79,11 @@ Visualize one image.
 image(zip.X.array[1,,,])
 ```
 
-Convert several digits to long/tall form for display.
+Below we convert several digits to long/tall form for display. Note
+data table syntax below, `by=observation` is like a for loop over
+observations, and the data tables returned for each value of
+`observation` are combined into a single result table, `zip.some`,
+with all of the images.
 
 ```{r}
 (zip.some <- data.table(observation=1:12)[, {
@@ -113,10 +117,27 @@ ggplot()+
 Torch is a machine learning library which is popular for deep
 learning, because it provides automatic differentiation (also known as
 auto-grad or automatic gradients), which makes it easy to learn
-parameters in deep neural networks. The popular python module `torch`
-uses a C++ library `libtorch` under the hood, which R package `torch`
-also uses, so it has most of the same functionality/concepts, and
-similar naming conventions. 
+parameters in deep neural networks. 
+
+* In auto-grad systems, you code the forward calculation (predictions
+  and loss),
+* using operations for which the gradients of outputs with respect to
+  inputs are known (already coded by the creators of the torch
+  library),
+* so the auto-grad system can use the chain rule (back-propagation) to
+  derive the gradients (you do not have to explicitly code the
+  gradients, which can be error/bug-prone),
+* and the gradients are used for learning (take steps in the negative
+  gradient direction to decrease loss).
+* For more information about auto-grad, with a demo of how to code a
+  simple auto-grad system from scratch in R, and an explanation of how
+  to code interactive visualizations of the learning, see Chapter
+  18, Neural Networks, in [The animint2
+  Manual](https://rcdata.nau.edu/genomic-ml/animint2-manual/Ch18-neural-networks.html).
+
+The popular python module `torch` uses a C++ library `libtorch` under
+the hood, which R package `torch` also uses, so it has most of the
+same functionality/concepts, and similar naming conventions.
 
 The main data structure in torch is a tensor, which is analogous to
 the R multi-dimensional array. Below we convert R arrays to torch
@@ -156,7 +177,7 @@ class.
 
 ```{r}
 (n.classes <- length(unique(zip.y.array)))
-torch::torch_manual_seed(1)
+torch::torch_manual_seed(1)#for reproducibility.
 linear <- torch::nn_linear(n.features, n.classes)
 str(linear$parameters)
 ```
@@ -322,6 +343,7 @@ optimizer$zero_grad()
   zip.y.tensor,
   sequential,
   subtrain.validation.index.list$subtrain))
+subtrain.loss$backward()
 optimizer$step()
 ```
 
@@ -352,15 +374,18 @@ for(batch.number in seq_along(big.batches)){
     zip.y.tensor,
     sequential,
     batch.indices)
+  print(batch.loss)
   optimizer$zero_grad()
   batch.loss$backward()
   optimizer$step()
 }
 ```
 
+We use the function below to implement the same logic as above (take a
+step for each subtrain batch).
+
 ```{r}
-## my batching.
-take_steps <- function(subtrain.list, model, batch_size=200, step.size=0.1){
+take_steps <- function(subtrain.list, model){
   optimizer <- torch::optim_sgd(model$parameters, lr=step.size)
   batch.list <- get_batch_list(length(subtrain.list$y), batch_size)
   for(batch.number in seq_along(batch.list)){
