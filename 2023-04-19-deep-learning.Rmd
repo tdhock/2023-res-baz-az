@@ -6,6 +6,7 @@ if(FALSE){
 }
 library(data.table)
 library(ggplot2)
+torch::torch_tensor(1)
 ```
 
 In R one of the biggest strengths is the variety of packages that are
