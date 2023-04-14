@@ -2,7 +2,7 @@
 
 ```{r}
 if(FALSE){
-  install.packages(c("data.table", "R.utils", "ggplot2", "torch", "future.apply"))
+  install.packages(c("data.table", "R.utils", "ggplot2", "torch"))
 }
 library(data.table)
 library(ggplot2)

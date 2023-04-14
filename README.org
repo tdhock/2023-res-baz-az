@@ -4,6 +4,17 @@ By Toby Dylan Hocking.
 
 A 2 hour workshop for the [[https://researchbazaar.arizona.edu/resbaz/Arizona2023/][ResBaz AZ (Research Bazaar Arizona) 2023]].
 
+** Installation instructions
+
+[[https://cloud.r-project.org/banner.shtml][Download]] the most recent release of R (4.2.3).
+
+Download an IDE that supports R. If you already use emacs, try [[https://ess.r-project.org/][Emacs
+Speaks Statistics]]. Otherwise, a good IDE for beginners is [[https://posit.co/download/rstudio-desktop/][RStudio]].
+
+#+begin_src R
+install.packages(c("data.table", "R.utils", "ggplot2", "torch"))
+#+end_src
+
 ** 19 April 2023
 
 Interactive visualizations
