@@ -237,9 +237,10 @@ for(units in hidden.units.vec){
   slides.vec <- sprintf("
 \\begin{frame}
   \\includegraphics[width=\\textwidth]{%s}
+\\
+Data=grey dots, predictions=red curve, loss=black line segments.
 \\end{frame}
 ", slides.list)
   writeLines(slides.vec, sprintf("figure-overfitting-%d.tex", units))
 }
-
 

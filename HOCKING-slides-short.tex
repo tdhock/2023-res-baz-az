@@ -124,13 +124,11 @@
     overfitting.
   \item Classification of digit images, to demonstrate how to compare
     machine learning algorithms in terms of test/prediction accuracy.
-  \item Regression for predicting earth system model parameters, as a
-    relevant application.
   \end{enumerate}
 \end{frame}
 
-\section{Example 1: avoiding overfitting in regression
-\includegraphics[height=2cm]{figure-overfitting-paper-loss}}  
+\section{Example 1: avoiding overfitting in regression, overview of concepts
+\includegraphics[height=3cm]{figure-overfitting-paper-loss}}   
  
 \begin{frame}
   \frametitle{Goal of this section: demonstrate how to avoid
@@ -182,6 +180,20 @@
   
 \end{frame}
 
+\begin{frame}
+  \frametitle{Neural network learning algorithm}
+  \begin{itemize}
+  \item We will fit a neural network to these data.
+  \item The neural network learns how to predict the outputs from the inputs.
+  \item The learning algorithm is gradient descent, which iteratively
+    minimizes the loss of the predictions with respect to the labels
+    in the subtrain set.
+  \item We also compute the loss on the validation set, so we can
+    select the number of gradient descent iterations that gives the
+    best predictions on new data (avoiding overfitting).
+  \end{itemize}
+\end{frame}
+ 
 \begin{frame}
   \frametitle{Illustration of subtrain/validation split}
   \includegraphics[width=\textwidth]{figure-overfitting-data-sets}
@@ -306,8 +318,8 @@ learned using gradient descent.
   \end{itemize}
 \end{frame}
 
-\section{Example 2: classifying images of digits
-\includegraphics[height=2cm]{figure-validation-loss-digits}}
+\section{Example 2: classifying images of digits, coding demos  
+\includegraphics[height=3cm]{figure-validation-loss-digits}}
 
 \begin{frame}
   \frametitle{Image classification}
