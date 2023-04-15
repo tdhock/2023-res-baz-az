@@ -4,9 +4,7 @@
 \usepackage{amsmath,amssymb}
 \usepackage{hyperref}
 \usepackage{graphicx}
-\usepackage{algorithmic}
-\usepackage{multirow}
-
+ 
 \DeclareMathOperator*{\argmin}{arg\,min}
 \DeclareMathOperator*{\Lik}{Lik}
 \DeclareMathOperator*{\PoissonLoss}{PoissonLoss}
@@ -140,13 +138,16 @@
   \begin{itemize}
   \item The goal of supervised machine learning is to get accurate
     predictions on new/unseen/held-out test data.
+  \item The data used during learning are caled the train set.
   \item Any machine learning algorithm is prone to overfit, which
-    means providing better predictions on the train/subtrain set than
+    means providing better predictions on the train set than
     on a held-out validation/test set. (BAD)
   \item To learn a model which does NOT overfit (GOOD), you need to
-    first divide your train set into subtrain/validation sets.
+    divide your train set into subtrain/validation sets (subtrain used
+    as input to gradient descent algorithm, validation set used to
+    control number of iterations of gradient descent).
   \item Code for figures in this section:
-    \url{https://github.com/tdhock/2020-yiqi-summer-school/blob/master/figure-overfitting.R}
+    \url{https://github.com/tdhock/2023-res-baz-az/blob/main/figure-overfitting.R}
   \end{itemize}
 \end{frame}
 
@@ -163,29 +164,14 @@
 \end{frame}
 
 \begin{frame}
-  \frametitle{Neural network prediction function}
-\begin{equation}
-  f(\mathbf x) = f_L[\cdots f_1[\mathbf x] ].
-\end{equation}
-  With $L-1$ hidden layers, we have for all $l\in\{1,\dots,L\}$:
-\begin{equation}
-  f_l(t) = A_l( \mathbf W_l^\intercal t ),
-\end{equation}
-The hyper-parameters which must be fixed prior to learning:
-\begin{itemize}
-\item Number of layers $L$.
-\item Activation functions $A_l$ (classically sigmoid, typically ReLU).
-\item Number of hidden units per layer ($u_1,\dots,u_{L-1}$).
-\item Sparsity pattern in the weight matrices $\mathbf W_l\in\mathbb R^{u_{l}\times u_{l-1}}$.
+  \frametitle{K-fold cross-validation for splitting data}
+  \begin{itemize}
+  \item One way to split is via K-fold cross-validation. 
+\item Each row is assigned a fold ID number from 1 to K.
+\item For each for ID, those data are held out, and other data are kept.
+\item Popular relative to other splitting methods because of simplicity and fairness (each row is held out one time).
 \end{itemize}
-The weight matrices $\mathbf W_l$ are learned using gradient descent.
-\begin{itemize}
-\item In each \textbf{iteration} of gradient descent, the weights are
-  updated in order to get better predictions on subtrain data.
-\item An \textbf{epoch} computes gradients on all subtrain data;
-  there can be from 1 to $N$(subtrain size) iterations per epoch.
-\end{itemize}
-
+\includegraphics[width=\textwidth]{drawing-cross-validation}
 \end{frame}
 
 \begin{frame}
@@ -207,133 +193,101 @@ The weight matrices $\mathbf W_l$ are learned using gradient descent.
   \end{itemize}
 \end{frame}
 
-\begin{frame}[fragile]
-  \frametitle{CSV data tables for machine learning}
-  \begin{itemize}
-  \item One row for each observation.
-  \item One column for the output/label/y (in regression the label is a real
-    number, in classification the label is a class/category).
-  \item The other columns should be inputs/features/X that will be used
-    to predict the corresponding output/label/y.
-  \end{itemize}
+\input{figure-overfitting-20} 
 
-  Example:
-  \url{https://raw.githubusercontent.com/tdhock/2020-yiqi-summer-school/master/data_linear.csv}
-
-\begin{verbatim}
-               x            y
-  1: -1.40694802  0.933196336
-  2: -0.76725660  3.832773444
-  3:  0.43712018  4.202983135
-  4:  2.44924674 13.089055084
-...
-\end{verbatim}
-\end{frame}
-
-\begin{frame}[fragile]
-  \frametitle{Result of reading CSV data into R}
-  Result is:
-
-\begin{verbatim}
-> sim.data
-     pattern          x          y fold
-  1:  linear -1.4069480  0.9331963    4
-  2:  linear -0.7672566  3.8327734    3
-  3:  linear  0.4371202  4.2029831    1
-  4:  linear  2.4492467 13.0890551    2
-  5:  linear -1.7899084  2.0791987    3
- ---                                   
-296:     sin  1.7838530  4.0502991    1
-297:     sin -0.2683533 -0.1097264    1
-298:     sin -0.5394955 -0.5539398    1
-299:     sin  1.8652215 -0.2262517    4
-300:     sin  0.6295997  8.8124249    4
-\end{verbatim}
-  
-\end{frame}
-
-\begin{frame}[fragile]
-  \frametitle{Assign each observation to subtrain/validation set}
-
-\begin{verbatim}
-validation.fold <- 1
-sim.data[, set := ifelse(
-  fold==validation.fold, "validation", "subtrain")]
-> sim.data
-     pattern          x          y fold        set
-  1:  linear -1.4069480  0.9331963    4   subtrain
-  2:  linear -0.7672566  3.8327734    3   subtrain
-  3:  linear  0.4371202  4.2029831    1 validation
-  4:  linear  2.4492467 13.0890551    2   subtrain
-  5:  linear -1.7899084  2.0791987    3   subtrain
- ---                                              
-296:     sin  1.7838530  4.0502991    1 validation
-297:     sin -0.2683533 -0.1097264    1 validation
-298:     sin -0.5394955 -0.5539398    1 validation
-299:     sin  1.8652215 -0.2262517    4   subtrain
-300:     sin  0.6295997  8.8124249    4   subtrain
-\end{verbatim}
-  
-\end{frame}
-
-\begin{frame}[fragile]
-  \frametitle{Neural network with one hidden layer, 20 hidden units}
-
-  Use for loops to fit different neural network models for each data
-  set and number of iterations. 
-
-\begin{verbatim}
-maxit.values <- 10^seq(0, 4)
-pattern.values <- c("linear", "quadratic", "sin")
-for(i in maxit.values)for(p in pattern.values){
-  pattern.data <- sim.data[pattern==p]
-  fit <- nnet::nnet(
-    y ~ x,
-    pattern.data[set=="subtrain"],
-    size=20,     #hidden units
-    linout=TRUE, #for regression
-    maxit=i)     #max number of iterations
-...
-\end{verbatim}
-
+\begin{frame}
+  \frametitle{Neural network prediction function} For an input feature
+  vector $\mathbf x\in\mathbb R^{u_1}$, the prediction function for a
+  neural network with $L$ layers (functions to learn) is:
+\begin{equation}
+  f(\mathbf x) = f_L[\cdots f_1[\mathbf x] ].
+\end{equation}
+  We have for all $l\in\{1,\dots,L\}$:
+\begin{equation}
+  f_l(t) = A_l( \mathbf W_l^\intercal t ),
+\end{equation}
+The hyper-parameters which must be fixed prior to learning:
+\begin{itemize}
+\item Number of functions to learn $L$.
+\item Activation functions $A_l$ (classically sigmoid, typically ReLU).
+\item Number of hidden units per layer ($u_1,\dots,u_{L-1}$).
+\item Sparsity pattern in the weight matrices $\mathbf W_l\in\mathbb R^{u_{l}\times u_{l-1}}$.
+\end{itemize}
 \end{frame}
 
 \begin{frame}
-  \frametitle{Neural network prediction function}
-\begin{equation*}
-  f(\mathbf x) = f_L[\cdots f_1[\mathbf x] ].
-\end{equation*}
-For the nnet code, we have:
-\begin{eqnarray*}
-  f_1(t) &=& A_1( \mathbf W_1^\intercal t ), \\
-  f_2(t) &=& A_2( \mathbf W_2^\intercal t ), \\
-  f(x) &=& f_2[ f_1(x) ] = A_2[ \mathbf W_2^\intercal A_1( \mathbf W_1^\intercal x ) ].
-\end{eqnarray*}
-The hyper-parameters are fixed prior to learning:
-\begin{itemize}
-\item Number of layers $L=2$.
-\item Activation functions $A_1$=sigmoid, $A_2$=identity.
-\item Number of units in the hidden layer $u_1=20$.
-\item No sparsity in the weight matrices (fully connected).
-\end{itemize}
-The weight matrices $\mathbf W_1,\mathbf W_2$ are learned using
-gradient descent.
-\begin{itemize}
-\item ``Full gradient'' method is used, so in each \textbf{epoch}
-  there is 1 iteration/update to the weights that is based on the
-  gradient summed over all subtrain data.
-\end{itemize}
+  \frametitle{Network for 1 input, 1 output, 1 hidden layer}
+  Neural network
+  diagrams show how each unit (node) is computed by applying the
+  weights (edges) to the values of the units at the previous layer.
 
+\includegraphics[width=\textwidth]{figure-architecture-reg20}
 \end{frame}
 
-\input{figure-overfitting-20}
+\begin{frame}
+  \frametitle{Network for 12 inputs, 1 output, 1 hidden layer}
+  Neural network
+  diagrams show how each unit (node) is computed by applying the
+  weights (edges) to the values of the units at the previous layer.
+
+\includegraphics[width=\textwidth]{figure-architecture-oneOut}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Network for 12 inputs, 10 outputs, 1 hidden layer}
+  Neural network
+  diagrams show how each unit (node) is computed by applying the
+  weights (edges) to the values of the units at the previous layer.
+
+\includegraphics[width=\textwidth]{figure-architecture-tenOut}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Network for 4 inputs, 1 output, 3 hidden layers}
+  Neural network
+  diagrams show how each unit (node) is computed by applying the
+  weights (edges) to the values of the units at the previous layer.
+
+\includegraphics[width=\textwidth]{figure-architecture-fiveLayers}
+\end{frame}
+
+
+\begin{frame}
+  \frametitle{Non-linear activation functions $A_l$}
+  \includegraphics[width=\textwidth]{figure-activations}
+
+Each layer except the last should have a activation function $A_l$
+which is not linear (last layer activation should be identity/linear).
+\end{frame}
+
+\begin{frame}
+  \frametitle{Gradient Descent Learning}
+
+  The neural network prediction function
+  $f(\mathbf x) = f_L[\cdots f_1[\mathbf x] ]$ has $l\in\{1,\dots,L\}$
+  component functions to learn:
+\begin{equation}
+  f_l(t) = A_l( \mathbf W_l^\intercal t ),
+\end{equation}
+The weight matrices $\mathbf W_l\in\mathbb R^{u_l\times u_{l-1}}$ are
+learned using gradient descent.
+\begin{itemize}
+\item A loss function $\mathcal L[f(\mathbf x), y]$ computes how bad
+  are predictions with respect to labels $y$ (ex: mean squared error
+  for regression, cross entropy loss for classificationc).
+\item In each \textbf{iteration} of gradient descent, the weights are
+  updated in order to get better predictions on subtrain data.
+\item An \textbf{epoch} computes gradients on all subtrain data;
+  there can be from 1 to $N$(subtrain size) iterations per epoch.
+\end{itemize}
+\end{frame}
 
 
 \begin{frame}
   \centering
   \includegraphics[height=0.5\textheight]{figure-overfitting-paper}
   \includegraphics[height=0.45\textheight]{figure-overfitting-paper-loss}   
-\end{frame}
+\end{frame} 
 
 \begin{frame}
   \frametitle{Summary of how to avoid overfitting}
@@ -372,7 +326,7 @@ gradient descent.
     $f(\includegraphics[height=1cm]{mnist-0})=0$,
     $f(\includegraphics[height=1cm]{mnist-1})=1$, etc.
   \item Code for figures in this section:
-    \url{https://github.com/tdhock/2020-yiqi-summer-school/blob/master/figure-validation-loss.R}
+    \url{https://github.com/tdhock/2023-res-baz-az/blob/main/figure-validation-loss.R}
   \end{itemize}
 \end{frame}
 
@@ -602,6 +556,16 @@ dense.model <- keras_model_sequential() %>%
 
 
  
+
+\begin{frame}
+  \frametitle{Two kinds of cross-validation must be used}
+  
+  \includegraphics[width=\textwidth]{nested_resampling.png}
+
+  Source: \url{https://mlr.mlr-org.com/articles/tutorial/nested_resampling.html}
+\end{frame}
+
+
 \begin{frame}
   \frametitle{Accuracy rates for each test fold}
   \includegraphics[width=\textwidth]{figure-test-accuracy-baseline}
@@ -613,7 +577,7 @@ dense.model <- keras_model_sequential() %>%
   \item Here we see that the featureless baseline is much less accurate than the
     three learned models, which are clearly learning something non-trivial.
   \item Code for test accuracy figures:
-    \url{https://github.com/tdhock/2020-yiqi-summer-school/blob/master/figure-test-accuracy.R}
+    \url{https://github.com/tdhock/2023-res-baz-az/blob/main/figure-test-accuracy.R}
   \end{itemize}
 \end{frame}
  
@@ -633,113 +597,6 @@ dense.model <- keras_model_sequential() %>%
     these data. (more/less layers, more/less units, completely
     different algorithm such as random forests, boosting, etc)
   \end{itemize}
-\end{frame}
-
-\section{Example 3: predicting earth system parameters \includegraphics[height=2cm]{figure-proda-inputs}} 
-
-\begin{frame}[fragile]
-  \frametitle{Problem setting}
-  Data from: F. Tao, Z. Zhou, Y. Huang, Q. Li, X. Lu, S. Ma, X. Huang,
-  Y. Liang, G. Hugelius, L. Jiang, R. Doughty, Z. Ren, and
-  Y. Luo. Deep learning optimizes data-driven representation of soil
-  organic carbon in earth system model over the conterminous United
-  States. Frontiers in Big Data, 3:17, 2020.
-
-  \centering
-  \includegraphics[width=0.7\textwidth]{figure-proda-inputs}
-
-  Soil vertical profile data gathered at shown sites, and used to
-  fit an earth system model.
-
-\end{frame}
-
-\begin{frame}[fragile]
-  \frametitle{Inputs}
-  Each site (row) has the following environmental features (columns):
-\begin{verbatim}
-        Lat       Lon Climate Soil_Type Veg_Cover ...
-1: 47.24611 -111.0525       2        11        10
-2: 47.68296 -111.2014       2        11        10
-3: 45.35806 -116.8119       3        11        10
-4: 46.73885 -102.7589       4        11        12
-5: 47.65490 -111.5828       2        11        10
-6: 48.49139 -109.8028       2        11        10
-...
-\end{verbatim}
-  
-\end{frame}
-
-\begin{frame}[fragile]
-  \frametitle{Outputs}
-  We have fit an earth system model, which has the following
-  parameters (columns) at each site (rows):
-\begin{verbatim}
-          cryo    maxpsi     tau4s3     fs2s3
-[1,] 0.5559403 0.4472416 0.04058302 0.4105497
-[2,] 0.4982079 0.5201390 0.19487388 0.3721377
-[3,] 0.4878875 0.4155263 0.30624590 0.4009429
-[4,] 0.4976373 0.4327989 0.25603125 0.1208804
-[5,] 0.4469068 0.4972995 0.41847923 0.1809647
-[6,] 0.4836617 0.4874783 0.17804971 0.2925210
-...
-\end{verbatim}
-  
-\end{frame}
-
-\begin{frame}
-  \frametitle{Problem statement}
-  To what extent can we predict the earth system model parameters at a
-  new site, assuming we have the environmental features / inputs
-  available?
-  \begin{itemize}
-  \item Cross-validation splits data into train and test sets.
-  \item Neural network learning algorithm run on train set.
-  \item Predictions and accuracy/loss computed on test set.
-\end{itemize}
-
-    \centering
-    \includegraphics[width=\textwidth]{drawing-cross-validation}
-    
-  
-  \end{frame}
-
-  \begin{frame}[fragile]
-    \frametitle{Neural network architecture taken from paper}
-\begin{verbatim}
-    keras_model_sequential() %>%
-      layer_dense(
-        units = 256, activation = 'relu',
-        input_shape = ncol(keep.mat.list[["input"]])) %>%
-      layer_dropout(0.3) %>%
-      layer_dense(units = 512, activation = 'relu') %>%
-      layer_dropout(0.5) %>%
-      layer_dense(units = 512, activation = 'relu') %>%
-      layer_dropout(0.5) %>%
-      layer_dense(units = 256, activation = 'relu') %>%
-      layer_dropout(0.3) %>%
-      layer_dense(units = 1 OR 25) %>%
-      compile(
-        loss = loss_mean_squared_error,
-        optimizer = optimizer_adadelta()
-      )
-\end{verbatim}
-  \end{frame}
-
-\begin{frame}
-  \frametitle{Neural networks often more accurate than featureless baseline }
-  \centering
-  \includegraphics[width=0.9\textwidth]{figure-proda-cv-data-map}
-
-  \includegraphics[width=0.9\textwidth]{figure-proda-cv-some-out}
-
-  \begin{description}
-  \item[Multi-task:] single neural network which predicts all 25 outputs.
-  \item[Single-task:] 25 neural networks, each trained seperately to
-    predict a single output.
-  \item[baseline:] always predict the mean of the labels/outputs in
-    the train set (feaureless, ignores inputs/features).
-  \end{description}
-  
 \end{frame}
 
 \section{Summary and quiz questions}
