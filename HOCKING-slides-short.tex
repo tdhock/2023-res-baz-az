@@ -324,8 +324,8 @@ learned using gradient descent.
 \begin{frame}
   \frametitle{Image classification}
   \begin{itemize}
-  \item One of the most popular/successful applications of machine
-    learning.
+  \item A problem in computer vision, one of the most
+    popular/successful application domains of machine learning.
   \item Input: image file $x\in\mathbb R^{h\times w\times c}$ where
     $h$ is the height in pixels, $w$ is the width, $c$ is the number
     of channels, e.g. RGB image $c=3$ channels.
@@ -366,6 +366,8 @@ learned using gradient descent.
  6:  6 -1 -1  ... -1.000 -1.000   -1
 ...
 \end{verbatim}
+
+Demo: reading CSV, plotting digits, \url{https://github.com/tdhock/2023-res-baz-az/blob/main/2023-04-19-deep-learning.Rmd}
   
 \end{frame}
 
@@ -373,10 +375,11 @@ learned using gradient descent.
   \frametitle{Converting R data to torch tensors}
 Use array function with all columns except first as data.  
 \begin{verbatim}
-zip.size <- 16
+zip.dt <- data.table::fread("zip.train.gz")
 zip.X.array <- array(
   data = unlist(zip.dt[1:nrow(zip.dt),-1]),
-  dim = c(nrow(zip.dt), zip.size, zip.size, 1))
+  dim = c(nrow(zip.dt), 1, 16, 16))
+zip.X.tensor <- torch::torch_tensor(zip.X.array)
 \end{verbatim}
 Need to specify dimensions of array:
 \begin{itemize}
@@ -392,95 +395,90 @@ Need to specify dimensions of array:
   \frametitle{Linear model R code}
 
 \begin{verbatim}
-library(keras)
-linear.model <- keras::keras_model_sequential() %>%
-  keras::layer_flatten(
-    input_shape = c(16, 16, 1)) %>%
-  keras::layer_dense(
-    units = 10,
-    activation = 'softmax')
+n.features <- 16*16
+n.classes <- 10
+linear.model <- torch::nn_sequential(
+  torch::nn_flatten(),
+  torch::nn_linear(n.features, n.classes))
+pred.tensor <- linear.model(zip.X.tensor)
 \end{verbatim}
 
   \begin{itemize}
   \item First layer must specify shape of inputs (here 16x16x1).
-  \item \texttt{layer\_flatten} converts any shape to a single dimension
-    of units (here 256).
-  \item \texttt{layer\_dense} uses all units in the previous layer to
-    predict each unit in the layer.
-  \item \texttt{units=10} because there are ten possible classes for an output.
-  \item \texttt{activation='softmax'} is required for the last/output layer in
-    multi-class classification problems.
+  \item \texttt{nn\_flatten} converts any shape to a single dimension
+    of units (here, convert each image from 1x16x16-array to 256-vector).
+  \item \texttt{nn\_linear} uses all units/features in the previous
+    layer (256) to predict each unit in the next layer (10).
+  \item There are ten possible classes for an output.
   \end{itemize}
 
 \end{frame}
 
 \begin{frame}[fragile]
-\frametitle{Keras model compilation}
+\frametitle{Loss computation}
 \begin{verbatim}
-linear.model %>% keras::compile(
-  loss = keras::loss_categorical_crossentropy,
-  optimizer = keras::optimizer_adadelta(),
-  metrics = c('accuracy')
-)
+loss.fun <- torch::nn_cross_entropy_loss()
+loss.tensor <- loss.fun(pred.tensor, zip.y.tensor)
+step.size <- 0.1
+optimizer <- torch::optim_sgd(linear.model$parameters, lr=step.size)
+optimizer$zero_grad()
+loss.tensor$backward()
+optimizer$step()
 \end{verbatim}
-In \texttt{compile} you can specify
 \begin{itemize}
-\item a \texttt{loss} function, which is directly optimized/minimized
-  in each iteration of the gradient descent learning algorithm. 
-  \url{https://keras.io/api/losses/} 
-\item an \texttt{optimizer}, which is the version of gradient descent
-  learning algorithm to use. 
-  \url{https://keras.io/api/optimizers/} 
-\item an evaluation \texttt{metric} to monitor, not directly optimized
-  via gradient descent, but usually more relevant/interpretable for
-  the application (e.g. accuracy is the proportion of correctly
-  predicted labels). \url{https://keras.io/api/metrics/} 
-\end{itemize}
-\end{frame}
- 
-\begin{frame}[fragile]
-\frametitle{Keras model fitting}
-\begin{verbatim}
-linear.model %>% keras::fit(
-  zip.X.array, zip.y.mat,
-  epochs = 50,
-  validation_split = 0.2
-)
-\end{verbatim}
-In \texttt{fit} you can specify
-\begin{itemize}
-\item Train data inputs \texttt{zip.X.array} and outputs
-  \texttt{zip.y.mat} (required).
-\item Number of full passes of gradient descent through the subtrain
-  data (\texttt{epochs}). In each epoch the gradient with respect to
-  each subtrain observation is computed once.
-\item \texttt{validation\_split=0.2} which means to use 80\% subtrain
-  (used for gradient descent parameter updates), 20\% validation (used
-  for hyper-parameter selection). 
+\item \texttt{loss.fun} is the cross-entropy loss for multi-class
+  classification, which is directly optimized/minimized in each
+  iteration of the gradient descent learning algorithm.
+\item \texttt{optimizer} is the version of the gradient descent learning
+  algorithm to use.
+\item \texttt{backward} method computes gradients.
+\item \texttt{step} method updates model parameters based on gradients.
 \end{itemize}
 \end{frame}
  
 \begin{frame}
   \includegraphics[width=\textwidth]{figure-validation-loss-linear}
+
+  Demo: splitting data, gradient descent loop.
 \end{frame}
  
+\begin{frame}[fragile]
+  \frametitle{Dense (fully connected) neural network R code}
+
+\begin{verbatim}
+one.hidden.layer <- torch::nn_sequential(
+  torch::nn_flatten(),
+    torch::nn_linear(n.features, n.hidden.units),
+    torch::nn_relu(),
+    torch::nn_linear(n.hidden.units, n.classes))
+two.hidden.layers <- torch::nn_sequential(
+  torch::nn_flatten(),
+    torch::nn_linear(n.features, n.hidden.1),
+    torch::nn_relu(),
+    torch::nn_linear(n.hidden.1, n.hidden.2),
+    torch::nn_relu(),
+    torch::nn_linear(n.hidden.2, n.classes))
+\end{verbatim}
+
+\end{frame}
+ 
+\begin{frame}
+  \includegraphics[width=\textwidth]{figure-validation-loss-dense}
+\end{frame}
+ 
+\begin{frame}
+  \includegraphics[width=\textwidth]{figure-validation-loss-three}
+\end{frame}
+
 \begin{frame}[fragile]
   \frametitle{Sparse (convolutional) model R code}
 
 \begin{verbatim}
-library(keras)
-conv.model <- keras_model_sequential() %>%
-  layer_conv_2d(
-    input_shape = dim(zip.X.array)[-1],
-    filters = 20,
-    kernel_size = c(3,3),
-    activation = 'relu') %>% 
-  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
-  layer_flatten() %>%
-  layer_dense(units = 100, activation = 'relu') %>% 
-  layer_dense(
-    units = ncol(zip.y.mat), 
-    activation = 'softmax')
+seq2flat <- torch::nn_sequential(
+  torch::nn_conv2d(in_channels = 1, out_channels = 10, kernel_size = 4),
+  torch::nn_relu(),
+  torch::nn_max_pool2d(kernel_size = 2),
+  torch::nn_flatten())
 \end{verbatim}
 
   \begin{itemize}
@@ -496,37 +494,6 @@ conv.model <- keras_model_sequential() %>%
   \includegraphics[width=\textwidth]{figure-validation-loss-conv}
 \end{frame}
  
-\begin{frame}[fragile]
-  \frametitle{Dense (fully connected) neural network R code}
-
-\begin{verbatim}
-library(keras)
-dense.model <- keras_model_sequential() %>%
-  layer_flatten(
-    input_shape = dim(zip.X.array)[-1]) %>%
-  layer_dense(units = 100, activation = 'relu') %>% 
-  layer_dense(units = 100, activation = 'relu') %>% 
-  layer_dense(units = 100, activation = 'relu') %>% 
-  layer_dense(units = 100, activation = 'relu') %>%
-  layer_dense(units = 100, activation = 'relu') %>%
-  layer_dense(units = 100, activation = 'relu') %>% 
-  layer_dense(units = 100, activation = 'relu') %>%   
-  layer_dense(units = 100, activation = 'relu') %>% 
-  layer_dense(
-    units = ncol(zip.y.mat), 
-    activation = 'softmax')
-\end{verbatim}
-
-\end{frame}
- 
-\begin{frame}
-  \includegraphics[width=\textwidth]{figure-validation-loss-dense}
-\end{frame}
- 
-\begin{frame}
-  \includegraphics[width=\textwidth]{figure-validation-loss-three}
-\end{frame}
-
 \begin{frame}
   \frametitle{K-fold cross-validation for model evaluation}
   Is convolutional more accurate on unseen test data?
