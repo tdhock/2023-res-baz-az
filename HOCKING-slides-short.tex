@@ -377,17 +377,21 @@ Use array function with all columns except first as data.
 \begin{verbatim}
 zip.dt <- data.table::fread("zip.train.gz")
 zip.X.array <- array(
-  data = unlist(zip.dt[1:nrow(zip.dt),-1]),
+  data = unlist(zip.dt[,-1]),
   dim = c(nrow(zip.dt), 1, 16, 16))
 zip.X.tensor <- torch::torch_tensor(zip.X.array)
+zip.y.tensor <- torch::torch_tensor(
+  zip.dt$V1+1L, torch::torch_long())
 \end{verbatim}
-Need to specify dimensions of array:
+Need to specify dimensions of input/X array:
 \begin{itemize}
 \item Observations: same as the number of rows in the CSV table.
+\item Channels: 1 (greyscale image, would be 3 for RGB image).
 \item Pixels wide: 16.
 \item Pixels high: 16.
-\item Channels: 1 (greyscale image).
 \end{itemize}
+
+For output/y need to add 1 in R, and specify long int type.
 
 \end{frame}
 
@@ -420,7 +424,8 @@ pred.tensor <- linear.model(zip.X.tensor)
 loss.fun <- torch::nn_cross_entropy_loss()
 loss.tensor <- loss.fun(pred.tensor, zip.y.tensor)
 step.size <- 0.1
-optimizer <- torch::optim_sgd(linear.model$parameters, lr=step.size)
+optimizer <- torch::optim_sgd(
+  linear.model$parameters, lr=step.size)
 optimizer$zero_grad()
 loss.tensor$backward()
 optimizer$step()
@@ -434,6 +439,28 @@ optimizer$step()
 \item \texttt{backward} method computes gradients.
 \item \texttt{step} method updates model parameters based on gradients.
 \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Gradient Descent learning algorithm}
+\begin{verbatim}
+gradient_descent <- 
+  function(index.list, model, n_epochs, gradient.set){
+  loss.dt.list <- list()
+  for(epoch in seq(1, n_epochs)){
+    take_steps(index.list[[gradient.set]], model)
+    epoch.loss.dt <- loss_each_set(index.list, model)
+    loss.dt.list[[paste(epoch)]] <- 
+      data.table(epoch, epoch.loss.dt)
+  }
+  rbindlist(loss.dt.list)
+}
+\end{verbatim}
+  \begin{itemize}
+  \item \verb|take_steps| sub-routine updates model parameters.
+  \item \verb|loss_each_set| computes loss and error rate on gradient set
+    and held-out set.
+  \end{itemize}
 \end{frame}
  
 \begin{frame}
@@ -461,6 +488,30 @@ two.hidden.layers <- torch::nn_sequential(
 \end{verbatim}
 
 \end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Use for loop to implement dense network}
+\begin{verbatim}
+new_fully_connected_units <- function(units.per.layer){
+  seq.args <- list(torch::nn_flatten())
+  for(output.i in seq(2, length(units.per.layer))){
+    input.i <- output.i-1
+    seq.args[[length(seq.args)+1]] <- torch::nn_linear(
+      units.per.layer[[input.i]], 
+      units.per.layer[[output.i]])
+    if(output.i<length(units.per.layer)){
+      seq.args[[length(seq.args)+1]] <- torch::nn_relu()
+    }
+  }
+  do.call(torch::nn_sequential, seq.args)
+}
+\end{verbatim}
+  \begin{itemize}
+  \item input a vector of units per layer, for example c(256,1000,100,10).
+  \item Begin with flatten.
+  \item Linear followed by relu in each layer except last.
+  \end{itemize}
+\end{frame}
  
 \begin{frame}
   \includegraphics[width=\textwidth]{figure-validation-loss-dense}
@@ -468,6 +519,84 @@ two.hidden.layers <- torch::nn_sequential(
  
 \begin{frame}
   \includegraphics[width=\textwidth]{figure-validation-loss-three}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Fully connected/dense vs convolutional/sparse network}
+  \includegraphics[width=\textwidth]{figure-convolutional-filters-3-2-1}
+\begin{verbatim}
+torch::nn_conv1d(in_channels=1, 
+  out_channels=1, kernel_size=2)
+\end{verbatim}
+
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Convolutional with two filters/output channels}
+  \includegraphics[width=\textwidth]{figure-convolutional-filters-3-2-2}
+  
+\begin{verbatim}
+torch::nn_conv1d(in_channels=1, 
+  out_channels=2, kernel_size=2)
+\end{verbatim}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Fully connected vs convolutional, two filters}
+  \begin{eqnarray*}
+  \begin{bmatrix}
+    h_1 \\
+    h_2 
+  \end{bmatrix}
+    &=&
+  \begin{bmatrix}
+    w_{1,1} & w_{1,2} & w_{1,3} \\
+    w_{2,1} & w_{2,2} & w_{2,3}
+  \end{bmatrix}
+  \begin{bmatrix}
+    x_1 \\
+    x_2 \\
+    x_3
+  \end{bmatrix} \text{(fully connected)}
+    \\
+  \begin{bmatrix}
+    h_1 \\
+    h_2 
+  \end{bmatrix}
+    &=&
+  \begin{bmatrix}
+    v_{1} & v_{2} & 0 \\
+    0 & v_{1} & v_{2}
+  \end{bmatrix}
+  \begin{bmatrix}
+    x_1 \\
+    x_2 \\
+    x_3
+  \end{bmatrix} \text{(convolutional)}\\
+  \begin{bmatrix}
+    h_{1,1} \\
+    h_{1,2} \\
+    h_{2,1} \\
+    h_{2,2}
+  \end{bmatrix}
+    &=&
+  \begin{bmatrix}
+    v_{1,1} & v_{1,2} & 0 \\
+    0 & v_{1,1} & v_{1,2} \\
+    v_{2,1} & v_{2,2} & 0 \\
+    0 & v_{2,1} & v_{2,2}
+  \end{bmatrix}
+  \begin{bmatrix}
+    x_1 \\
+    x_2 \\
+    x_3
+  \end{bmatrix} \text{(conv, two filters)}
+  \end{eqnarray*}
+  \begin{itemize}
+  \item Weight sharing: same weights used to compute different
+    output units. 
+  \item Sparsity: zeros in weight matrix.
+  \end{itemize}
 \end{frame}
 
 \begin{frame}[fragile]
@@ -479,11 +608,18 @@ seq2flat <- torch::nn_sequential(
   torch::nn_relu(),
   torch::nn_max_pool2d(kernel_size = 2),
   torch::nn_flatten())
+one.flat <- seq2flat(zip.X.tensor[1,,,,drop=FALSE])
+n.flat <- length(one.flat)
+torch::nn_sequential(
+  seq2flat, 
+  torch::nn_linear(n.flat, n.hidden.units),
+  torch::nn_relu(),
+  torch::nn_linear(n.hidden.units, n.classes))
 \end{verbatim}
 
   \begin{itemize}
   \item Sparse: few inputs are used to predict each unit in
-    \texttt{layer\_conv\_2d}.
+    \texttt{nn\_conv2d}.
   \item Exploits structure of image data to make learning
     easier/faster.
   \end{itemize}

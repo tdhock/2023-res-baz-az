@@ -617,22 +617,25 @@ as below.
 
 ```{r}
 n.hidden.units <- 100
+new_fully_connected_units <- function(units.per.layer){
+  seq.args <- list(torch::nn_flatten())
+  for(output.i in seq(2, length(units.per.layer))){
+    input.i <- output.i-1
+    seq.args[[length(seq.args)+1]] <- torch::nn_linear(
+      units.per.layer[[input.i]], 
+      units.per.layer[[output.i]])
+    if(output.i<length(units.per.layer)){
+      seq.args[[length(seq.args)+1]] <- torch::nn_relu()
+    }
+  }
+  do.call(torch::nn_sequential, seq.args)
+}
 new_fully_connected <- function(n.hidden.layers){
   units.per.layer <- c(
     n.features,
     rep(n.hidden.units,n.hidden.layers),
     n.classes)
-  seq.args <- list(torch::nn_flatten())
-  for(output.i in seq(2, length(units.per.layer))){
-    input.i <- output.i-1
-    seq.args[[output.i]] <- torch::nn_linear(
-      units.per.layer[[input.i]], 
-      units.per.layer[[output.i]])
-    if(output.i<length(units.per.layer)){
-      seq.args[[paste(output.i,"act")]] <- torch::nn_relu()
-    }
-  }
-  do.call(torch::nn_sequential, seq.args)
+  new_fully_connected_units(units.per.layer)
 }
 
 new_fully_connected(0)# linear model.
@@ -649,7 +652,8 @@ linear.model(zip.X.tensor[1:2,])
 Note that in the code above if we specify more than one hidden layer,
 that is considered a deep neural network (deep learning).
 
-In the code below, we define another 
+In the code below, we define another kind of deep neural network, with
+a sparse/convolutional layer:
 
 ```{r}
 new_convolutional <- function(){
@@ -668,6 +672,8 @@ new_convolutional <- function(){
 }
 (convolutional.network <- new_convolutional())
 ```
+
+We combine all of the models into the list below,
 
 ```{r}
 new_model_list <- list(
@@ -731,7 +737,6 @@ in any order), so great speedups could be obtained if you run in them
 parallel, for example on a computer cluster such as NAU Monsoon, [see
 my tutorial
 here](https://tdhock.github.io/blog/2020/monsoon-batchtools/).
-
 
 ```{r}
 test.some <- test.loss[is.finite(value) & value!= 100] 
