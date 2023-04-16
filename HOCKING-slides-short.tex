@@ -404,29 +404,7 @@ gradient descent.
 \end{frame}
 
 \begin{frame}[fragile]
-  \frametitle{Converting label column to matrix for neural network}
-
-  This is a ``one hot'' encoding of the class labels.  
-  
-\begin{verbatim}
-zip.dt <- data.table::fread("zip.gz")
-zip.y.mat <- keras::to_categorical(zip.dt$V1)
-
-      0 1 2 3 4 5 6 7 8 9
- [1,] 0 0 0 0 0 0 1 0 0 0
- [2,] 0 0 0 0 0 1 0 0 0 0
- [3,] 0 0 0 0 1 0 0 0 0 0
- [4,] 0 0 0 0 0 0 0 1 0 0
- [5,] 0 0 0 1 0 0 0 0 0 0
- [6,] 0 0 0 0 0 0 1 0 0 0
-...
-\end{verbatim}
-
-
-\end{frame}
-
-\begin{frame}[fragile]
-  \frametitle{Converting inputs to tensor (multi-dim array) for neural network}
+  \frametitle{Converting R data to torch tensors}
 Use array function with all columns except first as data.  
 \begin{verbatim}
 zip.size <- 16
@@ -635,121 +613,13 @@ dense.model <- keras_model_sequential() %>%
   \end{itemize}
 \end{frame}
 
-\section{Example 3: predicting earth system parameters \includegraphics[height=2cm]{figure-proda-inputs}} 
-
-\begin{frame}[fragile]
-  \frametitle{Problem setting}
-  Data from: F. Tao, Z. Zhou, Y. Huang, Q. Li, X. Lu, S. Ma, X. Huang,
-  Y. Liang, G. Hugelius, L. Jiang, R. Doughty, Z. Ren, and
-  Y. Luo. Deep learning optimizes data-driven representation of soil
-  organic carbon in earth system model over the conterminous United
-  States. Frontiers in Big Data, 3:17, 2020.
-
-  \centering
-  \includegraphics[width=0.7\textwidth]{figure-proda-inputs}
-
-  Soil vertical profile data gathered at shown sites, and used to
-  fit an earth system model.
-
-\end{frame}
-
-\begin{frame}[fragile]
-  \frametitle{Inputs}
-  Each site (row) has the following environmental features (columns):
-\begin{verbatim}
-        Lat       Lon Climate Soil_Type Veg_Cover ...
-1: 47.24611 -111.0525       2        11        10
-2: 47.68296 -111.2014       2        11        10
-3: 45.35806 -116.8119       3        11        10
-4: 46.73885 -102.7589       4        11        12
-5: 47.65490 -111.5828       2        11        10
-6: 48.49139 -109.8028       2        11        10
-...
-\end{verbatim}
-  
-\end{frame}
-
-\begin{frame}[fragile]
-  \frametitle{Outputs}
-  We have fit an earth system model, which has the following
-  parameters (columns) at each site (rows):
-\begin{verbatim}
-          cryo    maxpsi     tau4s3     fs2s3
-[1,] 0.5559403 0.4472416 0.04058302 0.4105497
-[2,] 0.4982079 0.5201390 0.19487388 0.3721377
-[3,] 0.4878875 0.4155263 0.30624590 0.4009429
-[4,] 0.4976373 0.4327989 0.25603125 0.1208804
-[5,] 0.4469068 0.4972995 0.41847923 0.1809647
-[6,] 0.4836617 0.4874783 0.17804971 0.2925210
-...
-\end{verbatim}
-  
-\end{frame}
-
-\begin{frame}
-  \frametitle{Problem statement}
-  To what extent can we predict the earth system model parameters at a
-  new site, assuming we have the environmental features / inputs
-  available?
-  \begin{itemize}
-  \item Cross-validation splits data into train and test sets.
-  \item Neural network learning algorithm run on train set.
-  \item Predictions and accuracy/loss computed on test set.
-\end{itemize}
-
-    \centering
-    \includegraphics[width=\textwidth]{drawing-cross-validation}
-    
-  
-  \end{frame}
-
-  \begin{frame}[fragile]
-    \frametitle{Neural network architecture taken from paper}
-\begin{verbatim}
-    keras_model_sequential() %>%
-      layer_dense(
-        units = 256, activation = 'relu',
-        input_shape = ncol(keep.mat.list[["input"]])) %>%
-      layer_dropout(0.3) %>%
-      layer_dense(units = 512, activation = 'relu') %>%
-      layer_dropout(0.5) %>%
-      layer_dense(units = 512, activation = 'relu') %>%
-      layer_dropout(0.5) %>%
-      layer_dense(units = 256, activation = 'relu') %>%
-      layer_dropout(0.3) %>%
-      layer_dense(units = 1 OR 25) %>%
-      compile(
-        loss = loss_mean_squared_error,
-        optimizer = optimizer_adadelta()
-      )
-\end{verbatim}
-  \end{frame}
-
-\begin{frame}
-  \frametitle{Neural networks often more accurate than featureless baseline }
-  \centering
-  \includegraphics[width=0.9\textwidth]{figure-proda-cv-data-map}
-
-  \includegraphics[width=0.9\textwidth]{figure-proda-cv-some-out}
-
-  \begin{description}
-  \item[Multi-task:] single neural network which predicts all 25 outputs.
-  \item[Single-task:] 25 neural networks, each trained seperately to
-    predict a single output.
-  \item[baseline:] always predict the mean of the labels/outputs in
-    the train set (feaureless, ignores inputs/features).
-  \end{description}
-  
-\end{frame}
-
 \section{Summary and quiz questions}
 
 \begin{frame}
   \frametitle{Summary}
   Thanks for participating! We have studied
   \begin{itemize}
-  \item Three examples of machine learning problems.
-  \item Two kinds of problems, regression y=real number,
+  \item Two kinds of machine learning problems, regression y=real number,
     classification y=integer category.
   \item Splitting a data set into train/test/subtrain/validation sets
     for learning hyper-parameters and evaluating prediction accuracy.
