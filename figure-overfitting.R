@@ -234,13 +234,14 @@ for(units in hidden.units.vec){
   print(gg.units)
   dev.off()
   slides.list[[length(slides.list)+1]] <- out.png
+  extra <- ifelse(slides.list==out.png, "Different number of iterations best for different data.", "\\ Data=grey dots, predictions=red curve, loss=black line segments.
+")
   slides.vec <- sprintf("
 \\begin{frame}
   \\includegraphics[width=\\textwidth]{%s}
-\\
-Data=grey dots, predictions=red curve, loss=black line segments.
+%s
 \\end{frame}
-", slides.list)
+", slides.list, extra)
   writeLines(slides.vec, sprintf("figure-overfitting-%d.tex", units))
 }
 
