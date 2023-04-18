@@ -3,11 +3,11 @@
 ```{r}
 if(FALSE){
   install.packages(c("data.table", "R.utils", "ggplot2", "torch"))
+  torch::torch_tensor(pi)
   rmarkdown::render("2023-04-19-deep-learning.Rmd")
 }
 library(data.table)
 library(ggplot2)
-torch::torch_tensor(pi)
 ```
 
 In R one of the biggest strengths is the variety of packages that are
@@ -33,8 +33,8 @@ from packages:
   functions in package. For example after doing `library(data.table)`
   you can just write `fread` (without `data.table::`). This is useful
   for convenience (no need to use the double colon syntax), but it
-  hides which package each object comes from, so it should be used
-  sparingly.
+  hides which package each object comes from (potentially confusing),
+  so it should be used sparingly.
 
 ## Download, read, visualize zip code data
 
@@ -719,6 +719,14 @@ train_model <- function(new_model, tt.index.list){
 test.loss.list <- list()
 for(test.fold in seq_along(train.test.cv.list)){
   tt.index.list <- train.test.cv.list[[test.fold]]
+  train.label.tab <- table(zip.y.int[tt.index.list$train])
+  featureless.pred <- names(train.label.tab)[which.max(train.label.tab)]
+  test.label <- zip.y.int[tt.index.list$test]
+  is.test.error <- test.label != featureless.pred
+  test.loss.list[[paste(test.fold,"featureless")]] <- data.table(
+    test.fold, model.name="featureless", epoch=NA_integer_, set="test",
+    variable="error.percent",
+    value=100*mean(is.test.error))
   for(model.name in names(new_model_list)){
     out.name <- paste(test.fold,model.name)
     print(out.name)
@@ -739,7 +747,19 @@ my tutorial
 here](https://tdhock.github.io/blog/2020/monsoon-batchtools/).
 
 ```{r}
-test.some <- test.loss[is.finite(value) & value!= 100] 
+ggplot()+
+  geom_point(aes(
+    value, model.name),
+    shape=1,
+    data=test.loss)+
+  facet_grid(. ~ variable, labeller=label_both, scales="free")
+```
+
+Above is all data, below excludes outliers.
+
+```{r}
+test.some <- test.loss[
+  !model.name %in% c("featureless","eight_dense_hidden_layers")]
 ggplot()+
   geom_point(aes(
     value, model.name),
