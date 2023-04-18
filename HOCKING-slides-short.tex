@@ -517,10 +517,6 @@ new_fully_connected_units <- function(units.per.layer){
   \includegraphics[width=\textwidth]{figure-validation-loss-dense}
 \end{frame}
  
-\begin{frame}
-  \includegraphics[width=\textwidth]{figure-validation-loss-three}
-\end{frame}
-
 \begin{frame}[fragile]
   \frametitle{Fully connected/dense vs convolutional/sparse network}
   \includegraphics[width=\textwidth]{figure-convolutional-filters-3-2-1}
@@ -604,20 +600,17 @@ torch::nn_conv1d(in_channels=1,
 
 \begin{verbatim}
 seq2flat <- torch::nn_sequential(
-  torch::nn_conv2d(in_channels = 1, out_channels = 10, kernel_size = 4),
+  torch::nn_conv2d(
+    in_channels = 1, out_channels = 10, kernel_size = 4),
   torch::nn_relu(),
-  torch::nn_max_pool2d(kernel_size = 2),
-  torch::nn_flatten())
-one.flat <- seq2flat(zip.X.tensor[1,,,,drop=FALSE])
-n.flat <- length(one.flat)
-torch::nn_sequential(
-  seq2flat, 
-  torch::nn_linear(n.flat, n.hidden.units),
+  torch::nn_flatten(),
+  torch::nn_linear(conv.hidden.units, last.hidden.units),
   torch::nn_relu(),
-  torch::nn_linear(n.hidden.units, n.classes))
+  torch::nn_linear(last.hidden.units, n.classes))
 \end{verbatim}
 
   \begin{itemize}
+  \item Two hidden layers: one convolutional, one linear.
   \item Sparse: few inputs are used to predict each unit in
     \texttt{nn\_conv2d}.
   \item Exploits structure of image data to make learning
