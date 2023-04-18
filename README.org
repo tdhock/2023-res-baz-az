@@ -6,8 +6,11 @@ By Toby Dylan Hocking.
 
 [[https://cloud.r-project.org/banner.shtml][Download]] the most recent release of R (4.2.3).
 
-Download an IDE that supports R. If you already use emacs, try [[https://ess.r-project.org/][Emacs
-Speaks Statistics]]. Otherwise, a good IDE for beginners is [[https://posit.co/download/rstudio-desktop/][RStudio]].
+Download an IDE that supports R. 
+- If you already use emacs, try [[https://ess.r-project.org/][Emacs Speaks Statistics]], see [[https://www.youtube.com/playlist?list=PLwc48KSH3D1Onsed66FPLywMSIQmAhUYJ][my video
+  screencasts which show how to install emacs and configure
+  ESS]]. 
+- Otherwise, a good IDE for beginners is [[https://posit.co/download/rstudio-desktop/][RStudio]].
 
 Then, run the following R code to install the required packages.
 
@@ -33,8 +36,7 @@ We will start by discussing concepts on
 [[file:HOCKING-slides-short.pdf][Slides PDF]], [[file:HOCKING-slides-short.tex][LaTeX source]], adapted from [[https://github.com/tdhock/2020-yiqi-summer-school#prepared-for-the-summer-school-4th-year-2021][ML Intro from Land Carbon
 Modeling Summer School]].
 
-Afterward we will show a demo of R code, 
-[[file:2023-04-19-deep-learning.Rmd]] code for tutorial.
+Afterward we will show a demo of R code: [[file:2023-04-19-deep-learning.Rmd][source]], [[https://rcdata.nau.edu/genomic-ml/2023-res-baz-az/2023-04-19-deep-learning.html][rendered]].
 
 Interactive visualizations
 
