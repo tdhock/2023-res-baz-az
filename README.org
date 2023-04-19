@@ -38,11 +38,13 @@ Modeling Summer School]].
 
 Afterward we will show a demo of R code: [[file:2023-04-19-deep-learning.Rmd][source]], [[https://rcdata.nau.edu/genomic-ml/2023-res-baz-az/2023-04-19-deep-learning.html][rendered]].
 
-Interactive visualizations
+** Interactive visualizations of gradient descent learning
 
+*** Gradient descent for regression with one input feature
 [[file:figure-grad-desc-regression.PNG]]
 [[https://rcdata.nau.edu/genomic-ml/animint-gallery/2022-02-02-gradient-descent-regression/index.html][Interactive viz]], [[https://github.com/tdhock/cs570-spring-2022/blob/969c42e6e6a704271c330bbf9424dfd50753e8bc/figure-gradient-descent-regression.R][source]].
 
+*** Gradient descent for binary classification with two input features
 [[file:figure-linear-neural-learning.PNG]]
 [[https://rcdata.nau.edu/genomic-ml/animint-gallery/2023-01-30-neural-networks-sim/index.html][Interactive viz]], [[https://github.com/tdhock/animint-book/blob/7e7a224c004843d42a6f7e6caa30e319bcdce901/Ch18-neural-networks-sim.R][source]].
 
