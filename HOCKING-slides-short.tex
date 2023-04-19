@@ -42,6 +42,10 @@
 
 \author{
   Toby Dylan Hocking\\
+  Tenure-track Assistant Professor, 2018--present,\\
+  Director of Machine Learning Research Lab,\\
+  School of Informatics, Computing, and Cyber Systems,\\
+  Northern Arizona University\\
   toby.hocking@nau.edu\\
   toby.hocking@r-project.org\\
 }
@@ -137,13 +141,14 @@
   \item The goal of supervised machine learning is to get accurate
     predictions on new/unseen/held-out test data.
   \item The data used during learning are caled the train set.
-  \item Any machine learning algorithm is prone to overfit, which
-    means providing better predictions on the train set than
-    on a held-out validation/test set. (BAD)
+  \item Any machine learning algorithm could overfit, if not used
+    properly. Overfitting means better predictions on the train set
+    than on a held-out validation/test set. (BAD)
   \item To learn a model which does NOT overfit (GOOD), you need to
     divide your train set into subtrain/validation sets (subtrain used
     as input to gradient descent algorithm, validation set used to
-    control number of iterations of gradient descent).
+    control model complexity, for example by selecting the best number
+    of iterations of gradient descent).
   \item Code for figures in this section:
     \url{https://github.com/tdhock/2023-res-baz-az/blob/main/figure-overfitting.R}
   \end{itemize}
@@ -209,20 +214,25 @@
 
 \begin{frame}
   \frametitle{Neural network prediction function} For an input feature
-  vector $\mathbf x\in\mathbb R^{u_1}$, the prediction function for a
-  neural network with $L$ layers (functions to learn) is:
+  vector $\mathbf x$, the prediction function for a neural network
+  with $L$ functions to learn:
 \begin{equation}
   f(\mathbf x) = f_L[\cdots f_1[\mathbf x] ].
 \end{equation}
-  We have for all $l\in\{1,\dots,L\}$:
+For each layer $l\in\{1,\dots,L\}$, we have the following function for
+predicting the units/features in the next layer:
 \begin{equation}
   f_l(t) = A_l( \mathbf W_l^\intercal t ),
 \end{equation}
 The hyper-parameters which must be fixed prior to learning:
 \begin{itemize}
-\item Number of functions to learn $L$.
+\item Number of layers or functions to learn $L$.
 \item Activation functions $A_l$ (classically sigmoid, typically ReLU).
-\item Number of hidden units per layer ($u_1,\dots,u_{L-1}$).
+\item Number of units per layer ($u_0,
+  u_1,\dots,u_{L-1},u_L$). $u_0$ is the number of input features,
+  $u_L$ is the number of outputs, and $u_1,\dots,u_{L-1}$ are the
+  numbers of hidden units in the intermediate layers
+  (hyper-parameters, larger for more powerful learner).
 \item Sparsity pattern in the weight matrices $\mathbf W_l\in\mathbb R^{u_{l}\times u_{l-1}}$.
 \end{itemize}
 \end{frame}
@@ -298,7 +308,12 @@ learned using gradient descent.
 \begin{frame}
   \centering
   \includegraphics[height=0.5\textheight]{figure-overfitting-paper}
-  \includegraphics[height=0.45\textheight]{figure-overfitting-paper-loss}   
+  \includegraphics[height=0.35\textheight]{figure-overfitting-paper-loss}   
+
+\scriptsize  Citation: Hocking TD. \emph{Introduction to machine learning and
+  neural networks} in book \emph{Land Carbon Cycle Modeling: Matrix
+  Approach, Data Assimilation, and Ecological Forecasting}, edited by
+  Luo Y, published by Taylor and Francis, 2022.
 \end{frame} 
 
 \begin{frame}
@@ -419,11 +434,11 @@ pred.tensor <- linear.model(zip.X.tensor)
 \end{frame}
 
 \begin{frame}[fragile]
-\frametitle{Loss computation}
+\frametitle{Computing loss, gradient, parameter updates}
 \begin{verbatim}
 loss.fun <- torch::nn_cross_entropy_loss()
 loss.tensor <- loss.fun(pred.tensor, zip.y.tensor)
-step.size <- 0.1
+step.size <- 0.1#also known as learning rate.
 optimizer <- torch::optim_sgd(
   linear.model$parameters, lr=step.size)
 optimizer$zero_grad()
@@ -538,7 +553,7 @@ torch::nn_conv1d(in_channels=1,
 \end{frame}
 
 \begin{frame}[fragile]
-  \frametitle{Fully connected vs convolutional, two filters}
+  \frametitle{Fully connected vs convolutional, two filters/channels}
   \begin{eqnarray*}
   \begin{bmatrix}
     h_1 \\
@@ -593,6 +608,16 @@ torch::nn_conv1d(in_channels=1,
     output units. 
   \item Sparsity: zeros in weight matrix.
   \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{2D convolutional kernel for 6x6 pixel image, kernel size=2}
+  \includegraphics[width=\textwidth]{figure-conv2d-6x6-kernel=2}
+\end{frame}
+
+\begin{frame}
+  \frametitle{2D convolutional kernel for 6x6 pixel image, kernel size=3}
+  \includegraphics[width=\textwidth]{figure-conv2d-6x6-kernel=3}
 \end{frame}
 
 \begin{frame}[fragile]
@@ -689,16 +714,20 @@ seq2flat <- torch::nn_sequential(
 
 \begin{frame}
   \frametitle{Summary}
-  Thanks for participating! We have studied
+We have studied
   \begin{itemize}
   \item Two kinds of machine learning problems, regression y=real number,
     classification y=integer category.
   \item Splitting a data set into train/test/subtrain/validation sets
     for learning hyper-parameters and evaluating prediction accuracy.
-  \item Overfitting and how to avoid it by choosing hyper-parameters
-    based on a validation set.
-  \item Comparing prediction accuracy of learning algorithms with each
-    other and to a featureless baseline.
+  \item Overfitting and how to avoid it using early stopping
+    regularization (choosing the best number of iterations/epochs
+    using a held-out validation set). Also, the validation set can and
+    should be used to learn other hyper-parameters (number of hidden
+    units/layers, learning rate/step size, batch size).
+  \item How to use a held-out test set to compare prediction accuracy
+    of learning algorithms with each other and to a featureless
+    baseline.
   \end{itemize}
 \end{frame}
 
@@ -713,15 +742,26 @@ seq2flat <- torch::nn_sequential(
 \item In order to determine if any non-trivial predictive relationship
   between inputs and output has been learned, a comparison with a
   featureless baseline that ignores the inputs must be used. How do you compute
-  the baseline predictions, for regression and classification
-  problems?
+  the featureless baseline predictions?
 \item How can you tell if machine learning model predictions are
   underfitting or overfitting?
 \item Many learning algorithms require input of the number of
-  iterations or epochs. For example in R the \texttt{nnet} function
-  has the \texttt{maxit} argument and the \text{keras::fit} function
-  has the \texttt{epochs} argument. How should this parameter be
+  iterations or epochs. How should this parameter be
   chosen?
+  \end{itemize}
+\end{frame}
+ 
+\begin{frame}
+  \frametitle{Thanks for participating!}
+  \begin{itemize}
+  \item Contact: toby.hocking@nau.edu, toby.hocking@r-project.org
+  \item Take my Deep Learning class if you want to know more about
+    these topics, \url{https://github.com/tdhock/cs499-599-fall-2022}
+  \item The NAU SICCS Machine Learning Research lab is recruiting!
+    \url{http://ml.nau.edu/}
+
+\includegraphics[width=\textwidth]{2023-04-14-ASU-ML-Day}
+
   \end{itemize}
 \end{frame}
  
