@@ -9,7 +9,7 @@ By Toby Dylan Hocking.
 Download an IDE that supports R. 
 - If you already use emacs, try [[https://ess.r-project.org/][Emacs Speaks Statistics]], see [[https://www.youtube.com/playlist?list=PLwc48KSH3D1Onsed66FPLywMSIQmAhUYJ][my video
   screencasts which show how to install emacs and configure
-  ESS]]. 
+  ESS]], or [[https://plantarum.ca/2020/12/30/emacs-tutorial-03/][this written tutorial]].
 - Otherwise, a good IDE for beginners is [[https://posit.co/download/rstudio-desktop/][RStudio]].
 
 Then, run the following R code to install the required packages.
