@@ -38,6 +38,9 @@ Modeling Summer School]].
 
 Afterward we will show a demo of R code: [[file:2023-04-19-deep-learning.Rmd][source]], [[https://rcdata.nau.edu/genomic-ml/2023-res-baz-az/2023-04-19-deep-learning.html][rendered]].
 
+See also: [[https://skeydan.github.io/Deep-Learning-and-Scientific-Computing-with-R-torch/][Deep Learning and Scientific Computing with R torch]] by
+Sigrid Keydana.
+
 ** Interactive visualizations of gradient descent learning
 
 *** Gradient descent for regression with one input feature
