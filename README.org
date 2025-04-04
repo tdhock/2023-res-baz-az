@@ -28,6 +28,10 @@ torch_tensor
 [ CPUFloatType{1} ]
 #+end_src
 
+** April 2025 talk at Toulouse RUG
+
+[[file:HOCKING-slides-TRUG.tex]] makes [[file:HOCKING-slides-TRUG.pdf]]
+
 ** 19 April 2023 workshop
 
 A 2 hour workshop for the [[https://researchbazaar.arizona.edu/resbaz/Arizona2023/][ResBaz AZ (Research Bazaar Arizona) 2023]].
