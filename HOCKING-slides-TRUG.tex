@@ -128,9 +128,9 @@
     the network structure and loss function.
   \item Easy speedups using GPUs (if your model and data can fit into
     GPU memory).
-  \item Same features as python version of torch, but with less
-    documentation and example code.
   \end{itemize}
+  R package has same features as python version of torch, but with
+  less documentation and example code.
 \end{frame}
 
 \begin{frame}
@@ -275,18 +275,12 @@ gradient_descent <-
 \begin{frame}[fragile]
   \frametitle{Dense (fully connected) neural network R code}
 \begin{verbatim}
+n.hidden.units <- 50
 one.hidden.layer <- torch::nn_sequential(
   torch::nn_flatten(),
     torch::nn_linear(n.features, n.hidden.units),
     torch::nn_relu(),
     torch::nn_linear(n.hidden.units, n.classes))
-two.hidden.layers <- torch::nn_sequential(
-  torch::nn_flatten(),
-    torch::nn_linear(n.features, n.hidden.1),
-    torch::nn_relu(),
-    torch::nn_linear(n.hidden.1, n.hidden.2),
-    torch::nn_relu(),
-    torch::nn_linear(n.hidden.2, n.classes))
 \end{verbatim}
 \end{frame}
 
@@ -326,23 +320,31 @@ new_fully_connected_units <- function(units.per.layer){
   \includegraphics[width=\textwidth]{figure-validation-loss-dense}
 \end{frame}
  
-\begin{frame}
+\begin{frame}[fragile]
   \frametitle{2D convolutional kernel for 6x6 pixel image, kernel size=2}
   \includegraphics[width=\textwidth]{figure-conv2d-6x6-kernel=2}
-\end{frame}
-
-\begin{frame}
-  \frametitle{2D convolutional kernel for 6x6 pixel image, kernel size=3}
-  \includegraphics[width=\textwidth]{figure-conv2d-6x6-kernel=3}
+\begin{verbatim}
+torch::nn_conv2d(
+  in_channels = 1, out_channels = 2, kernel_size = 2)
+\end{verbatim}
 \end{frame}
 
 \begin{frame}[fragile]
-  \frametitle{Sparse (convolutional) model R code}
+  \frametitle{2D convolutional kernel for 6x6 pixel image, kernel size=3}
+  \includegraphics[width=\textwidth]{figure-conv2d-6x6-kernel=3}
+\begin{verbatim}
+torch::nn_conv2d(
+  in_channels = 1, out_channels = 2, kernel_size = 3)
+\end{verbatim}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Convolutional model R code}
 
 \begin{verbatim}
 seq2flat <- torch::nn_sequential(
   torch::nn_conv2d(
-    in_channels = 1, out_channels = 10, kernel_size = 4),
+    in_channels = 1, out_channels = 2, kernel_size = 3),
   torch::nn_relu(),
   torch::nn_flatten(),
   torch::nn_linear(conv.hidden.units, last.hidden.units),
@@ -406,6 +408,25 @@ seq2flat <- torch::nn_sequential(
 \section{Implementing proposed AUM loss in mlr3torch framework}
 
 \begin{frame}[fragile]
+\frametitle{Computing loss and gradient descent updates in torch}
+\begin{verbatim}
+loss.fun <- torch::nn_cross_entropy_loss() #multi-class.
+loss.fun <- torch::nn_bce_with_logits_loss() #binary.
+loss.fun <- Proposed_AUM #ROC optimization.
+
+## Then the rest of the code is the same:
+loss.tensor <- loss.fun(pred.tensor, zip.y.tensor)
+step.size <- 0.1#also known as learning rate.
+optimizer <- torch::optim_sgd(
+  linear.model$parameters, lr=step.size)
+optimizer$zero_grad()
+loss.tensor$backward()
+optimizer$step()
+\end{verbatim}
+\end{frame}
+
+
+\begin{frame}[fragile]
   \frametitle{ROC curve R torch code uses argsort}
 \small
   \begin{verbatim}
@@ -459,9 +480,9 @@ Proposed_AUM <- function(pred_tensor, label_tensor){
   \begin{itemize}
   \item Provides standard interface to many popular learning
     algorithms in other R packages. (rpart, glmnet, torch, ...)
-  \item Reference implementation of standard algorithms like
+  \item Reference implementations of standard algorithms like
     cross-validation.
-  \item Makes it easy (no for loop necessary) to setup benchmarks to
+  \item Makes it easy to code benchmarks  (no for loop necessary) to
     compare prediction accuracy of different algorithms, on different
     data sets, ...
   \item Easy parallelization of benchmarks on super-computer
@@ -469,10 +490,206 @@ Proposed_AUM <- function(pred_tensor, label_tensor){
   \end{itemize}
 \end{frame}
 
-\begin{frame}
-  \frametitle{TODO}
+\begin{frame}[fragile]
+  \frametitle{Creating unbalanced MNIST data to demonstrate learning with AUM loss}
+  \begin{itemize}
+  \item MNIST data sets are images with ten classes (0--9).
+  \item Convert to binary problem: even versus odd.
+  \item Two subsets: balanced (50\% odd, 50\% even), unbalanced (99\%
+    odd, 1\% even).
+  \item Can AUM loss be used for learning in unbalanced data?
+  \end{itemize}
+\begin{verbatim}
+       subset target_prop     0     1     2     3
+1:   balanced        0.01  3568  3939  3613  3570
+2: unbalanced        0.01    36  3938    37  3571
+
+       4     5     6     7     8     9
+1:  3528  3157  3554  3646  3528  3479
+2:    35  3156    36  3647    35  3479
+\end{verbatim}
+  \url{https://tdhock.github.io/blog/2025/unbalanced/}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Data set is Task in mlr3}
+\begin{verbatim}
+task_MNIST <- mlr3::TaskClassif$new(
+  "MNIST", task_data_table, target="binary_label")
+task_MNIST$col_roles$stratum <- "original_y"
+task_MNIST$col_roles$subset <- "balanced_or_not"
+task_MNIST$col_roles$feature <- as.character(0:783)
+\end{verbatim}
   \url{https://tdhock.github.io/blog/2024/mlr3torch/}
 \end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Define AUM loss module sub-class}
+\begin{verbatim}
+AUM_loss_module <- torch::nn_module(
+  "nn_AUM_loss",
+  inherit = torch::nn_mse_loss,
+  initialize = function() {
+    super$initialize()
+  },
+  forward = Proposed_AUM
+)
+\end{verbatim}
+  \url{https://tdhock.github.io/blog/2024/mlr3torch/}
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Defining a linear model in mlr3torch}
+Number of epochs fixed at 400.
+\begin{verbatim}
+pipe_op_list <- list(
+  mlr3torch::PipeOpTorchIngressNumeric$new(),
+  mlr3torch::nn("linear", out_features=1),
+  mlr3pipelines::po("torch_loss", AUM_loss_module),
+  mlr3pipelines::po(
+    "torch_optimizer",
+    mlr3torch::t_opt("sgd", lr=0.1)),
+  mlr3pipelines::po(
+    "torch_model_classif",
+    batch_size = 100000,
+    predict_type="prob",
+    n.epochs=400))
+\end{verbatim}
+  \url{https://tdhock.github.io/blog/2024/mlr3torch/}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Computing subtrain/validation AUC at each epoch}
+\begin{verbatim}
+measure_list = mlr3::msrs(c("classif.auc", "classif.acc"))
+pipe_op_list = list(...
+  mlr3pipelines::po("torch_callbacks",
+    mlr3torch::t_clbk("history")),
+  mlr3pipelines::po(
+    "torch_model_classif",
+    batch_size = 100000, patience=400,
+    predict_type="prob",
+    measures_train=measure_list,
+    measures_valid=measure_list,
+    n.epochs=paradox::to_tune(
+      upper = 400, internal = TRUE)))
+graph_obj = Reduce(
+  mlr3pipelines::concat_graphs, pipe_op_list)
+learner_obj = mlr3::as_learner(graph_obj)
+mlr3::set_validate(learner_obj, validate = 0.5)
+\end{verbatim}
+  \url{https://tdhock.github.io/blog/2024/mlr3torch/}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Auto-tuner learns best number of epochs}
+\begin{verbatim}
+pipe_op_list = list(...
+  mlr3pipelines::po(
+    "torch_model_classif",
+    measures_valid=measure_list,
+    n.epochs=paradox::to_tune(
+      upper = 400, internal = TRUE))
+...
+learner_auto = mlr3tuning::auto_tuner(
+  learner = learner_obj,
+  tuner = mlr3tuning::tnr("internal"),
+  resampling = mlr3::rsmp("insample"),
+  measure = mlr3::msr("internal_valid_score"),
+  term_evals = 1,
+  store_models = TRUE)
+\end{verbatim}
+  \url{https://tdhock.github.io/blog/2024/mlr3torch/}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Create a learner list and benchmark grid}
+  Grid combines a set of learners, tasks, and cross-validation splits.
+\begin{verbatim}
+learner_list <- list(
+  mlr3learners::LearnerClassifCVGlmnet$new(),
+  mlr3::LearnerClassifFeatureless$new(),
+  learner_auto)
+SOAK <- mlr3resampling::ResamplingSameOtherSizesCV$new()
+(bench.grid <- mlr3::benchmark_grid(
+  list(task_MNIST),
+  learner_list,
+  SOAK))
+\end{verbatim}
+  \url{https://tdhock.github.io/blog/2024/mlr3torch/}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Run benchmark on your local computer} Uses all available
+  CPUs on your computer: each combination of learner, task, and
+  cross-validation split is run in parallel.
+\begin{verbatim}
+if(require(future))plan("multisession")
+bench.result <- mlr3::benchmark(
+  bench.grid, store_models = TRUE)
+\end{verbatim}
+  \url{https://tdhock.github.io/blog/2024/mlr3torch/}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Run benchmark on super-computer cluster} I typically use
+  SLURM, which requires definition of how much time/memory to reserve
+  per learner/task/split.
+\begin{verbatim}
+batchtools::makeExperimentRegistry(
+  file.dir = reg.dir, seed = 1,
+  packages = "mlr3verse")
+mlr3batchmark::batchmark(
+  bench.grid, store_models = TRUE)
+job.table <- batchtools::getJobTable()
+chunks <- data.frame(job.table, chunk=1)
+batchtools::submitJobs(chunks, resources=list(
+  walltime = 60*60*24,#seconds
+  memory = 8000,#megabytes per cpu
+  chunks.as.arrayjobs=TRUE))
+\end{verbatim}
+  \url{https://tdhock.github.io/blog/2024/mlr3torch/}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Get results from super-computer cluster}
+\begin{verbatim}
+jobs.after <- batchtools::getJobTable(reg=reg)
+ids <- jobs.after[is.na(error), job.id]
+keep_history <- function(x){
+  learners <- x$learner_state$model$marshaled[[
+    "tuning_instance"]]$archive$learners
+  x$learner_state$model <- if(is.function(learners)){
+    L <- learners(1)[[1]]
+    x$history <- L$model$torch_model_classif[[
+      "model"]]$callbacks$history
+  }
+  x
+}
+bench.result <- mlr3batchmark::reduceResultsBatchmark(
+  ids, fun=keep_history)
+\end{verbatim}
+  \url{https://tdhock.github.io/blog/2024/mlr3torch/}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Test AUC of linear models}
+  \includegraphics[width=\textwidth]{2025-04-04-nnet_prop0.01-test-auc}
+  \vskip -0.2cm
+  \begin{itemize}
+  \item   No difference for balanced training.
+  \item AUM loss has larger test AUC using unbalanced training.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Subtrain/validation AUC of linear models}
+  \includegraphics[width=\textwidth]{2025-04-04-nnet_prop0.01-train-auc}
+  AUM loss reaches max validation AUC much faster than logistic.
+\end{frame}
+
+
 
 \section{Conclusion}
  
