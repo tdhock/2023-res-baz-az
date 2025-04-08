@@ -638,7 +638,7 @@ bench.result <- mlr3::benchmark(
   per learner/task/split.
 \begin{verbatim}
 batchtools::makeExperimentRegistry(
-  file.dir = reg.dir, seed = 1,
+  file.dir = "registry_folder", seed = 1,
   packages = "mlr3verse")
 mlr3batchmark::batchmark(
   bench.grid, store_models = TRUE)
@@ -673,12 +673,33 @@ bench.result <- mlr3batchmark::reduceResultsBatchmark(
   \url{https://tdhock.github.io/blog/2024/mlr3torch/}
 \end{frame}
 
+\begin{frame}[fragile]
+  \frametitle{Cache results to RData and CSV files}
+\begin{verbatim}
+bench.result <- mlr3batchmark::reduceResultsBatchmark(...)
+save(bench.result, file="registry_folder.RData")
+
+score_dt <- mlr3resampling::score(
+  bench.result, mlr3::msr("classif.auc"))
+score_out <- score_dt[, .(
+  task_id, test.subset, train.subsets, test.fold,
+  algorithm, classif.auc)]
+fwrite(score_out, "registry_folder.csv")
+
+history_dt <- score_dt[, learner[[1]]$model, by=.(
+  task_id, test.subset, train.subsets, test.fold,
+  algorithm)]
+fwrite(history_dt, "registry_folder_history.csv")
+\end{verbatim}
+  \url{https://tdhock.github.io/blog/2024/mlr3torch/}
+\end{frame}
+
 \begin{frame}
   \frametitle{Test AUC of linear models}
   \includegraphics[width=\textwidth]{2025-04-04-nnet_prop0.01-test-auc}
   \vskip -0.2cm
   \begin{itemize}
-  \item   No difference for balanced training.
+  \item Little difference for balanced training.
   \item AUM loss has larger test AUC using unbalanced training.
   \end{itemize}
 \end{frame}
@@ -701,9 +722,12 @@ bench.result <- mlr3batchmark::reduceResultsBatchmark(
   \item Minimizing proposed AUM loss results in ROC optimization.
   \item Proposed AUM loss can be implemented in torch in R.
   \item Advantages of mlr3 framework include parallelization, simplified code (fewer nested loops).
-    
-\includegraphics[width=\textwidth]{2023-04-14-ASU-ML-Day}
-
+  \end{itemize}
+  See my blog for reproducible R code examples: \small
+  \begin{itemize}
+  \item \url{https://tdhock.github.io/blog/2024/auto-grad-overhead/}
+  \item \url{https://tdhock.github.io/blog/2024/mlr3torch/}
+  \item \url{https://tdhock.github.io/blog/2025/unbalanced/}
   \end{itemize}
 \end{frame}
  
