@@ -513,6 +513,10 @@ Proposed_AUM <- function(pred_tensor, label_tensor){
 
 \begin{frame}[fragile]
   \frametitle{Data set is Task in mlr3}
+
+  Define subset column so that we will train on unbalanced,
+  predict/test on balanced.
+  
 \begin{verbatim}
 task_MNIST <- mlr3::TaskClassif$new(
   "MNIST", task_data_table, target="binary_label")
@@ -617,7 +621,10 @@ SOAK <- mlr3resampling::ResamplingSameOtherSizesCV$new()
   learner_list,
   SOAK))
 \end{verbatim}
-  \url{https://tdhock.github.io/blog/2024/mlr3torch/}
+  SOAK (Same/Other/All K-fold cross-validation for estimating
+  similarity of patterns in data subsets,
+  \url{https://arxiv.org/abs/2410.08643}) implements training on one
+  subset (unbalanced) and test on another (balanced).
 \end{frame}
 
 \begin{frame}[fragile]
