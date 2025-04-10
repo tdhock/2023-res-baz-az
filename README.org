@@ -30,7 +30,25 @@ torch_tensor
 
 ** April 2025 talk at Toulouse RUG
 
+Slides:
 [[file:HOCKING-slides-TRUG.tex]] makes [[file:HOCKING-slides-TRUG.pdf]]
+
+Figures at the end of the slides were computed using code from
+[[file:HOCKING-slides-TRUG.R]], which caches results for figures to CSV files:
+
+[[file:2025-04-04-nnet_prop0.01.csv]] makes
+
+[[file:2025-04-04-nnet_prop0.01-test-auc.png]]
+
+[[file:2025-04-04-nnet_prop0.01_history.csv]] makes
+
+[[file:2025-04-04-nnet_prop0.01-train-auc.png]]
+
+To re-do the train/test error calculations, you need to first create
+CSV files for the MNIST data sets using [[https://github.com/tdhock/cv-same-other-paper/blob/main/data_Classif_vision_simple.py][this python script]]. Then
+create balanced/unbalanced subset assignments in
+data_Classif_unbalanced/*.csv files [[https://tdhock.github.io/blog/2025/unbalanced/][using the code from this blog]].
+[[file:data_Classif_unbalanced.tgz][Local tgv archive]].
 
 ** 19 April 2023 workshop
 
